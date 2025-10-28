@@ -1,0 +1,31 @@
+# auth-service/src/main/resources/application.yml
+spring:
+  datasource:
+    url: jdbc:postgresql://postgres:5432/auth_db
+    username: postgres
+    password: secret
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: none
+    show-sql: false
+  flyway:
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
+server:
+  port: 8081
+
+grpc:
+  server:
+    port: 9091
+
+jwt:
+  secret: ${JWT_SECRET:super-long-random-base64-string}
+  access-expiry-min: 15
+  refresh-expiry-min: 10080   # 7 days
+
+notification:
+  grpc:
+    host: notification-service
+    port: 9094

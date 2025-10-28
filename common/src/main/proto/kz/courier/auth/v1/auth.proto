@@ -1,0 +1,142 @@
+syntax = "proto3";
+package kz.courier.auth.v1;
+option java_package = "kz.courier.auth.v1";
+option java_multiple_files = true;
+
+import "kz/courier/common/v1/common.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/empty.proto";
+
+// Role enum for RBAC
+enum Role {
+  ROLE_UNSPECIFIED = 0;
+  CLIENT = 1;
+  COURIER = 2;
+  PARTNER = 3;
+  ADMIN = 4;
+}
+
+// Registration request
+message RegisterRequest {
+  string email = 1;
+  string password = 2;  // Plaintext; service hashes it
+  optional string phone = 3;  // Optional per ТЗ
+  string first_name = 4;
+  string last_name = 5;
+  bool push_consent = 6;  // Consent for push notifications
+  Role role = 7;  // Defaults to CLIENT
+}
+
+// Registration response
+message RegisterResponse {
+  kz.courier.common.v1.Response response = 1;
+  string user_id = 2;  // UUID of created user
+  string confirmation_token = 3;  // For email verification
+}
+
+// Login request
+message LoginRequest {
+  string email = 1;
+  string password = 2;
+  optional string device_id = 3;  // For session tracking
+}
+
+// Login response with JWT
+message LoginResponse {
+  kz.courier.common.v1.Response response = 1;
+  string access_token = 2;  // JWT
+  string refresh_token = 3;  // For token refresh
+  google.protobuf.Timestamp expires_at = 4;
+  Role role = 5;
+}
+
+// Refresh token request
+message RefreshTokenRequest {
+  string refresh_token = 1;
+}
+
+// Refresh token response
+message RefreshTokenResponse {
+  kz.courier.common.v1.Response response = 1;
+  string access_token = 2;
+  string refresh_token = 3;  // New refresh token if rotated
+  google.protobuf.Timestamp expires_at = 4;
+}
+
+// Get user details
+message GetUserRequest {
+  string user_id = 1;
+}
+
+message GetUserResponse {
+  kz.courier.common.v1.Response response = 1;
+  string user_id = 2;
+  string email = 3;
+  string first_name = 4;
+  string last_name = 5;
+  optional string phone = 6;
+  Role role = 7;
+  bool is_email_verified = 8;
+  google.protobuf.Timestamp created_at = 9;
+}
+
+// Update user profile
+message UpdateUserRequest {
+  string user_id = 1;
+  optional string email = 2;
+  optional string first_name = 3;
+  optional string last_name = 4;
+  optional string phone = 5;
+  optional bool push_consent = 6;
+}
+
+// Change password
+message ChangePasswordRequest {
+  string user_id = 1;
+  string old_password = 2;
+  string new_password = 3;
+}
+
+// Delete user
+message DeleteUserRequest {
+  string user_id = 1;
+}
+
+// Verify email with token
+message VerifyEmailRequest {
+  string token = 1;
+}
+
+// Admin: List users
+message ListUsersRequest {
+  kz.courier.common.v1.PaginationRequest pagination = 1;
+  optional string filter_role = 2;  // Filter by role, e.g., "CLIENT"
+}
+
+message ListUsersResponse {
+  kz.courier.common.v1.Response response = 1;
+  repeated GetUserResponse users = 2;
+  kz.courier.common.v1.PaginationResponse pagination = 3;
+}
+
+// AuthService definition
+service AuthService {
+  // User registration
+  rpc Register(RegisterRequest) returns (RegisterResponse);
+  // User login
+  rpc Login(LoginRequest) returns (LoginResponse);
+  // Refresh JWT token
+  rpc RefreshToken(RefreshTokenRequest) returns (RefreshTokenResponse);
+  // Get user profile
+  rpc GetUser(GetUserRequest) returns (GetUserResponse);
+  // Update user profile
+  rpc UpdateUser(UpdateUserRequest) returns (kz.courier.common.v1.Response);
+  // Change password
+  rpc ChangePassword(ChangePasswordRequest) returns (kz.courier.common.v1.Response);
+  // Delete user
+  rpc DeleteUser(DeleteUserRequest) returns (kz.courier.common.v1.Response);
+  // Verify email with token
+  rpc VerifyEmail(VerifyEmailRequest) returns (kz.courier.common.v1.Response);
+  // Admin: List all users
+  rpc ListUsers(ListUsersRequest) returns (ListUsersResponse);
+}
