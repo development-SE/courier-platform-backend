@@ -1,0 +1,52 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: courier-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER:     courier_master
+      POSTGRES_PASSWORD: secret_master
+      POSTGRES_DB:       postgres          # default DB (not used by services)
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # 1. Init script to create all DBs + users
+      - ./docker/postgres/init-multiple-dbs.sh:/docker-entrypoint-initdb.d/init-dbs.sh
+      # 2. Optional: SQL dumps / extensions
+      # - ./docker/postgres/extensions.sql:/docker-entrypoint-initdb.d/02-extensions.sql
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "courier_master", "-d", "postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: courier-kafka
+    ports:
+      - "9092:9092"
+      - "9093:9093"
+      - "29092:29092"   # host access
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT'
+      KAFKA_LISTENERS: 'PLAINTEXT://0.0.0.0:9092,PLAINTEXT_HOST://0.0.0.0:29092,CONTROLLER://0.0.0.0:9093'
+      KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092'
+      KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka:9093'
+      KAFKA_PROCESS_ROLES: 'broker,controller'
+      KAFKA_INTER_BROKER_LISTENER_NAME: 'PLAINTEXT'
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      CLUSTER_ID: 'MkU3OEVBNTcwNTJEMVVTNQ=='
+    healthcheck:
+      test: [ "CMD", "kafka-topics", "--bootstrap-server", "localhost:9092", "--list" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+volumes:
+  pgdata:

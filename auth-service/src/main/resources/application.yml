@@ -1,9 +1,9 @@
 # auth-service/src/main/resources/application.yml
 spring:
   datasource:
-    url: jdbc:postgresql://postgres:5432/auth_db
-    username: postgres
-    password: secret
+    url: jdbc:postgresql://localhost:5433/auth_db
+    username: auth_svc
+    password: auth_secret
     driver-class-name: org.postgresql.Driver
   jpa:
     hibernate:
@@ -12,6 +12,14 @@ spring:
   flyway:
     locations: classpath:db/migration
     baseline-on-migrate: true
+kafka:
+  bootstrap-servers: localhost:29092
+  producer:
+    key-serializer: org.apache.kafka.common.serialization.StringSerializer
+    value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+  consumer:
+    group-id: auth-service
+    auto-offset-reset: earliest
 
 server:
   port: 8081
@@ -25,7 +33,7 @@ jwt:
   access-expiry-min: 15
   refresh-expiry-min: 10080   # 7 days
 
-notification:
-  grpc:
-    host: notification-service
-    port: 9094
+#notification:
+#  grpc:
+#    host: notification-service
+#    port: 9094
