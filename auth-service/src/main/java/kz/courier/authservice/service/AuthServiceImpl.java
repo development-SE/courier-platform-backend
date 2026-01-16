@@ -12,6 +12,7 @@ import kz.courier.auth.v1.*;
 import kz.courier.common.v1.*;
 import lombok.RequiredArgsConstructor;
 import net.devh.boot.grpc.server.service.GrpcService;
+import org.springframework.cglib.core.Local;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -43,6 +44,10 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
                 fail(resp, "EMAIL_EXISTS", "E-mail already taken");
                 return;
             }
+            if(userRepo.existsByPhone(req.getPhone())) {
+                fail(resp, "PHONE_EXISTS", "Phone already taken");
+                return;
+            }
             validatePassword(req.getPassword());
             validateNames(req.getFirstName(), req.getLastName());
 
@@ -55,7 +60,10 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
                     .lastName(req.getLastName())
                     .pushConsent(req.getPushConsent())
                     .role(Role.valueOf(req.getRole().name()))
+                    .createdAt(LocalDateTime.now())
+                    .updatedAt(LocalDateTime.now())
                     .build();
+            System.out.println("Here user should be saved to db");
             user = userRepo.save(user);
 
             // ---- confirmation token -----------------------------------------

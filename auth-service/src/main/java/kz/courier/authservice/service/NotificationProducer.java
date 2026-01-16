@@ -13,7 +13,7 @@ public class NotificationProducer {
 
     private final KafkaTemplate<String, Object> kafkaTemplate;
 
-    @Value("${notification.kafka.topic}")
+    @Value("notification-kafka-topic}")
     private String topic;
 
     public void publish(NotificationEvent event) {

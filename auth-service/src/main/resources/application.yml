@@ -12,14 +12,14 @@ spring:
   flyway:
     locations: classpath:db/migration
     baseline-on-migrate: true
-kafka:
-  bootstrap-servers: localhost:29092
-  producer:
-    key-serializer: org.apache.kafka.common.serialization.StringSerializer
-    value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
-  consumer:
-    group-id: auth-service
-    auto-offset-reset: earliest
+  kafka:
+    bootstrap-servers: localhost:29092
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+    consumer:
+      group-id: auth-service
+      auto-offset-reset: earliest
 
 server:
   port: 8081
