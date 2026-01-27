@@ -1,0 +1,24 @@
+spring:
+  cloud:
+    config:
+      enabled: false
+    discovery:
+      enabled: false
+    gateway:
+      routes: []
+
+eureka:
+  client:
+    enabled: false
+    register-with-eureka: false
+    fetch-registry: false
+
+grpc:
+  client:
+    auth-service:
+      address: static://localhost:9091
+
+jwt:
+  secret: test-secret-minimum-256-bits-long
+  expiration: 900000
+  refresh-expiration: 604800000

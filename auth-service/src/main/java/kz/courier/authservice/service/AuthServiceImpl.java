@@ -1,7 +1,6 @@
 package kz.courier.authservice.service;
 
 import com.google.protobuf.Timestamp;
-import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
 import io.jsonwebtoken.Claims;
 import kz.courier.authservice.dto.NotificationEvent;
@@ -10,18 +9,23 @@ import kz.courier.authservice.model.Role;
 import kz.courier.authservice.repository.*;
 import kz.courier.auth.v1.*;
 import kz.courier.common.v1.*;
+import kz.courier.common.v1.Error;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import net.devh.boot.grpc.server.service.GrpcService;
-import org.springframework.cglib.core.Local;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.Map;
 import java.util.UUID;
 
+@Slf4j
 @GrpcService
 @RequiredArgsConstructor
 @Transactional
@@ -33,23 +37,33 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final NotificationProducer notificationProducer;
+    @Value("${API_BASE_URL}")
+    private String apiBaseUrl;
+    @Value("${API_VERIFY_PATH}")
+    private String apiVerifyPath;
 
-    /* ====================== REGISTER ====================== */
     @Override
-    public void register(RegisterRequest req, StreamObserver<RegisterResponse> resp) {
+    public void register(RegisterRequest req, StreamObserver<RegisterResponse> responseObserver) {
         try {
             // ---- validation -------------------------------------------------
             validateEmail(req.getEmail());
+
             if (userRepo.existsByEmail(req.getEmail())) {
-                fail(resp, "EMAIL_EXISTS", "E-mail already taken");
+                sendError(responseObserver, "EMAIL_EXISTS", "E-mail already taken");
                 return;
             }
-            if(userRepo.existsByPhone(req.getPhone())) {
-                fail(resp, "PHONE_EXISTS", "Phone already taken");
+
+            if (userRepo.existsByPhone(req.getPhone())) {
+                sendError(responseObserver, "PHONE_EXISTS", "Phone already taken");
                 return;
             }
+
             validatePassword(req.getPassword());
             validateNames(req.getFirstName(), req.getLastName());
+
+            System.out.println("USER IS creating------");
+            System.out.println(req.getPassword());
+
 
             // ---- create user ------------------------------------------------
             User user = User.builder()
@@ -63,7 +77,7 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
                     .createdAt(LocalDateTime.now())
                     .updatedAt(LocalDateTime.now())
                     .build();
-            System.out.println("Here user should be saved to db");
+            log.debug("Saving new user: {}", req.getEmail());
             user = userRepo.save(user);
 
             // ---- confirmation token -----------------------------------------
@@ -82,60 +96,72 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
                     .type("email_verification")
                     .payload(Map.of(
                             "user_name", user.getFirstName(),
-                            "verify_link", "http://localhost:8081/auth/verify?token=" + token
+                            "verify_link", apiBaseUrl + apiVerifyPath + "?token=" + token
                     ))
                     .build();
             notificationProducer.publish(event);
 
-            // ---- response ---------------------------------------------------
+            // ---- success response -------------------------------------------
             RegisterResponse reply = RegisterResponse.newBuilder()
                     .setResponse(successResponse())
                     .setUserId(user.getId().toString())
                     .setConfirmationToken(token)
                     .build();
-            resp.onNext(reply);
-            resp.onCompleted();
+
+            responseObserver.onNext(reply);
+            responseObserver.onCompleted();
+
         } catch (Exception e) {
-            resp.onError(Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
+            log.error("Unexpected error during registration", e);
+            sendError(responseObserver, "INTERNAL_ERROR", "Registration failed: " + e.getMessage());
         }
     }
 
-    /* ====================== LOGIN ====================== */
     @Override
-    public void login(LoginRequest req, StreamObserver<LoginResponse> resp) {
+    public void login(LoginRequest req, StreamObserver<LoginResponse> responseObserver) {
         userRepo.findByEmail(req.getEmail()).ifPresentOrElse(user -> {
-            boolean valid = user.isActive() && passwordEncoder.matches(req.getPassword(), user.getPasswordHash());
-            logLogin(user, req.getDeviceId(), valid);
 
-            if (!valid) {
-                fail(resp, "INVALID_CREDENTIALS", "Wrong e-mail or password");
+            // Account status check first (security best practice)
+            if (!user.isActive()) {
+                sendError(responseObserver, "ACCOUNT_INACTIVE", "Account is disabled or not activated.");
                 return;
             }
 
-            String access = jwtService.generateAccessToken(user.getId(), user.getRole().name());
-            String refresh = jwtService.generateRefreshToken(user.getId());
+            // Password verification
+            if (!passwordEncoder.matches(req.getPassword(), user.getPasswordHash())) {
+                sendError(responseObserver, "INVALID_CREDENTIALS", "Invalid password.");
+                return;
+            }
+
+            // Success path
+            logLogin(user, req.getDeviceId(), true);
+
+            String accessToken = jwtService.generateAccessToken(user.getId(), user.getRole().name());
+            String refreshToken = jwtService.generateRefreshToken(user.getId());
 
             LoginResponse reply = LoginResponse.newBuilder()
                     .setResponse(successResponse())
-                    .setAccessToken(access)
-                    .setRefreshToken(refresh)
+                    .setAccessToken(accessToken)
+                    .setRefreshToken(refreshToken)
                     .setExpiresAt(Timestamp.newBuilder()
                             .setSeconds(Instant.now().getEpochSecond() + 15 * 60)
                             .build())
                     .setRole(kz.courier.auth.v1.Role.valueOf(user.getRole().name()))
                     .build();
-            resp.onNext(reply);
-            resp.onCompleted();
-        }, () -> fail(resp, "USER_NOT_FOUND", "User not found"));
+
+            responseObserver.onNext(reply);
+            responseObserver.onCompleted();
+
+        }, () -> sendError(responseObserver, "USER_NOT_FOUND", "No account found with this email."));
     }
 
-    /* ====================== REFRESH TOKEN ====================== */
     @Override
-    public void refreshToken(RefreshTokenRequest req, StreamObserver<RefreshTokenResponse> resp) {
+    public void refreshToken(RefreshTokenRequest req, StreamObserver<RefreshTokenResponse> responseObserver) {
         try {
             Claims claims = jwtService.validateAndGetClaims(req.getRefreshToken());
             UUID userId = UUID.fromString(claims.getSubject());
-            User user = userRepo.findById(userId).orElseThrow();
+            User user = userRepo.findById(userId)
+                    .orElseThrow(() -> new IllegalArgumentException("User not found"));
 
             String newAccess = jwtService.generateAccessToken(userId, user.getRole().name());
             String newRefresh = jwtService.generateRefreshToken(userId);
@@ -148,35 +174,37 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
                             .setSeconds(Instant.now().getEpochSecond() + 15 * 60)
                             .build())
                     .build();
-            resp.onNext(reply);
-            resp.onCompleted();
+
+            responseObserver.onNext(reply);
+            responseObserver.onCompleted();
         } catch (Exception ex) {
-            fail(resp, "INVALID_REFRESH", "Refresh token invalid or expired");
+            log.warn("Refresh token failed: {}", ex.getMessage());
+            sendError(responseObserver, "INVALID_REFRESH", "Refresh token invalid or expired");
         }
     }
 
-    /* ====================== VERIFY EMAIL ====================== */
     @Override
-    public void verifyEmail(VerifyEmailRequest req, StreamObserver<kz.courier.common.v1.Response> resp) {
+    public void verifyEmail(VerifyEmailRequest req, StreamObserver<Response> responseObserver) {
         tokenRepo.findByTokenAndUsedFalse(req.getToken()).ifPresentOrElse(t -> {
             if (t.getExpiresAt().isBefore(LocalDateTime.now())) {
-                fail(resp, "TOKEN_EXPIRED", "Verification token expired");
+                sendError(responseObserver, "TOKEN_EXPIRED", "Verification token expired");
                 return;
             }
+
             User u = t.getUser();
             u.setEmailVerified(true);
             userRepo.save(u);
             t.setUsed(true);
             tokenRepo.save(t);
 
-            resp.onNext(successResponse());
-            resp.onCompleted();
-        }, () -> fail(resp, "TOKEN_INVALID", "Invalid or already used token"));
+            responseObserver.onNext(successResponse());
+            responseObserver.onCompleted();
+        }, () -> sendError(responseObserver, "TOKEN_INVALID", "Invalid or already used token"));
     }
 
     /* ====================== LIST USERS (admin) ====================== */
     @Override
-    public void listUsers(ListUsersRequest req, StreamObserver<ListUsersResponse> resp) {
+    public void listUsers(ListUsersRequest req, StreamObserver<ListUsersResponse> responseObserver) {
         var page = req.getPagination();
         var pageable = org.springframework.data.domain.PageRequest.of(page.getPage() - 1, page.getPageSize());
         var usersPage = userRepo.findAll(pageable);
@@ -203,26 +231,38 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
                         .build())
                 .build()));
 
-        resp.onNext(builder.build());
-        resp.onCompleted();
+        responseObserver.onNext(builder.build());
+        responseObserver.onCompleted();
     }
 
-    /* ====================== HELPERS ====================== */
-    private void fail(StreamObserver<?> obs, String code, String msg) {
-        var r = kz.courier.common.v1.Response.newBuilder()
-                .setSuccess(false)
-                .setError(kz.courier.common.v1.Error.newBuilder().setCode(code).setMessage(msg).build())
-                .setTimestamp(nowTs())
-                .build();
-        if (obs instanceof StreamObserver s) {
-            ((StreamObserver<kz.courier.common.v1.Response>) s).onNext(r);
-            s.onCompleted();
+    // ────────────────────────────────────────────────────────────────
+    //  Helpers
+    // ────────────────────────────────────────────────────────────────
+
+    private <T> void sendError(StreamObserver<T> observer, String code, String message) {
+        kz.courier.common.v1.Response error = errorResponse(code, message);
+
+        if (observer instanceof StreamObserver<?> typed) {
+            StreamObserver<RegisterResponse> reg = (StreamObserver<RegisterResponse>) typed;
+            reg.onNext(RegisterResponse.newBuilder().setResponse(error).build());
+            observer.onCompleted();
         }
     }
 
-    private kz.courier.common.v1.Response successResponse() {
-        return kz.courier.common.v1.Response.newBuilder()
+    private Response successResponse() {
+        return Response.newBuilder()
                 .setSuccess(true)
+                .setTimestamp(nowTs())
+                .build();
+    }
+
+    private Response errorResponse(String code, String message) {
+        return Response.newBuilder()
+                .setSuccess(false)
+                .setError(Error.newBuilder()
+                        .setCode(code)
+                        .setMessage(message)
+                        .build())
                 .setTimestamp(nowTs())
                 .build();
     }
@@ -236,9 +276,22 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
     }
 
     private void logLogin(User user, String deviceId, boolean success) {
+        InetAddress ipAddress;
+        try {
+            String ipStr = (deviceId != null && !deviceId.trim().isEmpty())
+                    ? deviceId.trim()
+                    : "0.0.0.0";
+
+            ipAddress = InetAddress.getByName(ipStr);
+        } catch (UnknownHostException e) {
+            log.warn("Invalid IP address received: {}, falling back to 0.0.0.0", deviceId, e);
+            ipAddress = InetAddress.getLoopbackAddress(); // 127.0.0.1
+            // or: ipAddress = InetAddress.getByAddress(new byte[]{0,0,0,0});
+        }
+
         LoginLog log = LoginLog.builder()
                 .user(user)
-                .ipAddress(deviceId != null ? deviceId : "unknown")
+                .ipAddress(ipAddress)
                 .userAgent("gRPC")
                 .success(success)
                 .build();

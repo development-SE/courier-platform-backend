@@ -1,0 +1,169 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: api-gateway
+
+  # Cloud Gateway Configuration
+  cloud:
+    config:
+      enabled: false
+
+    gateway:
+      discovery:
+        locator:
+          enabled: true  # Enable automatic route creation from Eureka
+          lower-case-service-id: true  # Convert service names to lowercase
+
+      # Global CORS Configuration
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowedOrigins:
+              - "http://localhost:3000"
+              - "http://localhost:5173" # Common Vite default
+            allowedMethods:
+              - GET
+              - POST
+              - PUT
+              - DELETE
+              - OPTIONS
+              - PATCH
+            allowedHeaders: "*"
+            allowCredentials: true
+            maxAge: 3600
+
+      # Route Definitions
+
+
+
+
+      # Default Filters (applied to all routes)
+      default-filters:
+        - name: Retry
+          args:
+            retries: 3
+            methods: GET
+            backoff:
+              firstBackoff: 50ms
+              maxBackoff: 500ms
+              factor: 2
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter:
+              replenishRate: 10
+              burstCapacity: 20
+              requestedTokens: 1
+        - AddRequestHeader=X-Gateway-Request, GatewayRequest
+        - AddResponseHeader=X-Gateway-Response, GatewayResponse
+      server:
+        webflux:
+          filter:
+            json-to-grpc:
+              enabled: false
+
+  # Redis for Rate Limiting
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password: # optional
+      timeout: 2000ms
+
+  # Eureka Client Configuration
+  eureka:
+    client:
+      serviceUrl:
+        defaultZone: http://localhost:8761/eureka/
+      fetch-registry: true
+      register-with-eureka: true
+    instance:
+      prefer-ip-address: true
+      instance-id: ${spring.application.name}:${random.value}
+
+# gRPC Client Configuration
+grpc:
+  client:
+    auth-service:
+      address: discovery:///auth-service  # ← Discovers via Eureka!
+      negotiationType: PLAINTEXT
+
+#    order-service:
+#      address: static://localhost:9091
+#      negotiationType: PLAINTEXT
+#    courier-service:
+#      address: static://localhost:9092
+#      negotiationType: PLAINTEXT
+#    partner-service:
+#      address: static://localhost:9093
+#      negotiationType: PLAINTEXT
+#    logistics-service:
+#      address: static://localhost:9094
+#      negotiationType: PLAINTEXT
+
+# JWT Configuration
+jwt:
+  secret: ${JWT_SECRET:super-long-random-base64-string}
+  expiration: 86400000 # 24 hours
+  refresh-expiration: 604800000 # 7 days
+
+# Resilience4j Circuit Breaker Configuration
+resilience4j:
+  circuitbreaker:
+    instances:
+      authServiceCircuitBreaker:
+        slidingWindowSize: 10
+        permittedNumberOfCallsInHalfOpenState: 3
+        slidingWindowType: COUNT_BASED
+        minimumNumberOfCalls: 5
+        waitDurationInOpenState: 10s
+        failureRateThreshold: 50
+        slowCallRateThreshold: 100
+        slowCallDurationThreshold: 2s
+  #      orderServiceCircuitBreaker:
+  #        slidingWindowSize: 10
+  #        permittedNumberOfCallsInHalfOpenState: 3
+  #        waitDurationInOpenState: 10s
+  #        failureRateThreshold: 50
+  #      courierServiceCircuitBreaker:
+  #        slidingWindowSize: 10
+  #        permittedNumberOfCallsInHalfOpenState: 3
+  #        waitDurationInOpenState: 10s
+  #        failureRateThreshold: 50
+  #      partnerServiceCircuitBreaker:
+  #        slidingWindowSize: 10
+  #        permittedNumberOfCallsInHalfOpenState: 3
+  #        waitDurationInOpenState: 10s
+  #        failureRateThreshold: 50
+
+  # Rate Limiter Configuration
+  ratelimiter:
+    instances:
+      default:
+        limitForPeriod: 100
+        limitRefreshPeriod: 1s
+        timeoutDuration: 0s
+
+# Actuator Configuration
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,gateway
+  endpoint:
+    health:
+      show-details: always
+
+# Logging
+logging:
+  level:
+    root: INFO
+    kz.courier.gateway: DEBUG
+    org.springframework.cloud.gateway: DEBUG
+    io.grpc: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+  file:
+    name: logs/api-gateway.log
