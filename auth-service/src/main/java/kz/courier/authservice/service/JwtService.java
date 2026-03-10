@@ -16,23 +16,26 @@ public class JwtService {
     private final long refreshExpMs;
 
     public JwtService(@Value("${jwt.secret}") String secret,
-                      @Value("${jwt.access-expiry-min}") long accessMin,
-                      @Value("${jwt.refresh-expiry-min}") long refreshMin) {
-        secret = Jwts.SIG.HS256.key().toString();
-        System.out.println(secret);
-        this.secretKey = Keys.hmacShaKeyFor(secret.getBytes());
-        this.accessExpMs = accessMin * 60 * 1000;
-        this.refreshExpMs = refreshMin * 60 * 1000;
+                  @Value("${jwt.access-expiry-min}") long accessMin,
+                  @Value("${jwt.refresh-expiry-min}") long refreshMin) {
+    // remove the random key generation line
+    this.secretKey = Keys.hmacShaKeyFor(secret.getBytes());
+    this.accessExpMs = accessMin * 60 * 1000;
+    this.refreshExpMs = refreshMin * 60 * 1000;
     }
 
-    public String generateAccessToken(UUID userId, String role) {
-        return Jwts.builder()
+    public String generateAccessToken(UUID userId, String role,  UUID companyId) {
+        var builder = Jwts.builder()
                 .setSubject(userId.toString())
                 .claim("role", role)
                 .setIssuedAt(new Date())
                 .setExpiration(new Date(System.currentTimeMillis() + accessExpMs))
-                .signWith(secretKey)
-                .compact();
+                .signWith(secretKey);
+        if (companyId != null) {
+            builder.claim("companyId", companyId.toString());
+        }
+
+        return builder.compact();
     }
 
     public String generateRefreshToken(UUID userId) {

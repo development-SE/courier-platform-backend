@@ -31,15 +31,22 @@ public class User {
     @Enumerated(EnumType.STRING)
     private Role role;
 
+    @Builder.Default 
     @Column(name = "is_active")
     private boolean active = true;
 
+    @Column(name = "company_id")
+    private UUID companyId;  // null for CLIENT/ADMIN, set for DIRECTOR/MANAGER
+
+    @Builder.Default
     @Column(name = "is_email_verified")
     private boolean emailVerified = false;
 
+    @Builder.Default
     @Column(name = "created_at")
     private LocalDateTime createdAt = LocalDateTime.now();
 
+    @Builder.Default
     @Column(name = "updated_at")
     private LocalDateTime updatedAt = LocalDateTime.now();
 }

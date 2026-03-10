@@ -5,14 +5,16 @@ import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
 import io.jsonwebtoken.Claims;
 import kz.courier.authservice.dto.NotificationEvent;
-import kz.courier.authservice.model.*;
+import kz.courier.authservice.model.ConfirmationToken;
+import kz.courier.authservice.model.LoginLog;
 import kz.courier.authservice.model.Role;
+import kz.courier.authservice.model.TokenType;
+import kz.courier.authservice.model.User;
 import kz.courier.authservice.repository.*;
 import kz.courier.auth.v1.*;
 import kz.courier.common.v1.*;
 import lombok.RequiredArgsConstructor;
 import net.devh.boot.grpc.server.service.GrpcService;
-import org.springframework.cglib.core.Local;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -38,20 +40,18 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
     @Override
     public void register(RegisterRequest req, StreamObserver<RegisterResponse> resp) {
         try {
-            // ---- validation -------------------------------------------------
             validateEmail(req.getEmail());
             if (userRepo.existsByEmail(req.getEmail())) {
                 fail(resp, "EMAIL_EXISTS", "E-mail already taken");
                 return;
             }
-            if(userRepo.existsByPhone(req.getPhone())) {
+            if (userRepo.existsByPhone(req.getPhone())) {
                 fail(resp, "PHONE_EXISTS", "Phone already taken");
                 return;
             }
             validatePassword(req.getPassword());
             validateNames(req.getFirstName(), req.getLastName());
 
-            // ---- create user ------------------------------------------------
             User user = User.builder()
                     .email(req.getEmail())
                     .passwordHash(passwordEncoder.encode(req.getPassword()))
@@ -60,13 +60,10 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
                     .lastName(req.getLastName())
                     .pushConsent(req.getPushConsent())
                     .role(Role.valueOf(req.getRole().name()))
-                    .createdAt(LocalDateTime.now())
-                    .updatedAt(LocalDateTime.now())
+                    .active(true)  
                     .build();
-            System.out.println("Here user should be saved to db");
             user = userRepo.save(user);
 
-            // ---- confirmation token -----------------------------------------
             String token = UUID.randomUUID().toString();
             ConfirmationToken ct = ConfirmationToken.builder()
                     .user(user)
@@ -76,18 +73,16 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
                     .build();
             tokenRepo.save(ct);
 
-            // ---- publish to Kafka -------------------------------------------
-            NotificationEvent event = NotificationEvent.builder()
+            notificationProducer.publish(NotificationEvent.builder()
                     .userId(user.getId().toString())
                     .type("email_verification")
                     .payload(Map.of(
-                            "user_name", user.getFirstName(),
+                            "user_name",   user.getFirstName(),
+                            "email",       user.getEmail(),
                             "verify_link", "http://localhost:8081/auth/verify?token=" + token
                     ))
-                    .build();
-            notificationProducer.publish(event);
+                    .build());
 
-            // ---- response ---------------------------------------------------
             RegisterResponse reply = RegisterResponse.newBuilder()
                     .setResponse(successResponse())
                     .setUserId(user.getId().toString())
@@ -95,6 +90,7 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
                     .build();
             resp.onNext(reply);
             resp.onCompleted();
+
         } catch (Exception e) {
             resp.onError(Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
         }
@@ -104,7 +100,8 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
     @Override
     public void login(LoginRequest req, StreamObserver<LoginResponse> resp) {
         userRepo.findByEmail(req.getEmail()).ifPresentOrElse(user -> {
-            boolean valid = user.isActive() && passwordEncoder.matches(req.getPassword(), user.getPasswordHash());
+            boolean valid = user.isActive() &&
+                    passwordEncoder.matches(req.getPassword(), user.getPasswordHash());
             logLogin(user, req.getDeviceId(), valid);
 
             if (!valid) {
@@ -112,7 +109,11 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
                 return;
             }
 
-            String access = jwtService.generateAccessToken(user.getId(), user.getRole().name());
+            String access = jwtService.generateAccessToken(
+                user.getId(), 
+                user.getRole().name(),
+                user.getCompanyId()  // ← need to add this field to User entity
+            );
             String refresh = jwtService.generateRefreshToken(user.getId());
 
             LoginResponse reply = LoginResponse.newBuilder()
@@ -126,6 +127,7 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
                     .build();
             resp.onNext(reply);
             resp.onCompleted();
+
         }, () -> fail(resp, "USER_NOT_FOUND", "User not found"));
     }
 
@@ -137,12 +139,16 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
             UUID userId = UUID.fromString(claims.getSubject());
             User user = userRepo.findById(userId).orElseThrow();
 
-            String newAccess = jwtService.generateAccessToken(userId, user.getRole().name());
+            String access = jwtService.generateAccessToken(
+                user.getId(), 
+                user.getRole().name(),
+                user.getCompanyId()  // ← need to add this field to User entity
+            );
             String newRefresh = jwtService.generateRefreshToken(userId);
 
             RefreshTokenResponse reply = RefreshTokenResponse.newBuilder()
                     .setResponse(successResponse())
-                    .setAccessToken(newAccess)
+                    .setAccessToken(access)
                     .setRefreshToken(newRefresh)
                     .setExpiresAt(Timestamp.newBuilder()
                             .setSeconds(Instant.now().getEpochSecond() + 15 * 60)
@@ -150,6 +156,7 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
                     .build();
             resp.onNext(reply);
             resp.onCompleted();
+
         } catch (Exception ex) {
             fail(resp, "INVALID_REFRESH", "Refresh token invalid or expired");
         }
@@ -171,15 +178,149 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
 
             resp.onNext(successResponse());
             resp.onCompleted();
+
         }, () -> fail(resp, "TOKEN_INVALID", "Invalid or already used token"));
+    }
+
+    /* ====================== GET USER ====================== */
+    @Override
+    public void getUser(GetUserRequest req, StreamObserver<GetUserResponse> resp) {
+        try {
+            UUID userId = UUID.fromString(req.getUserId());
+            User user = userRepo.findById(userId)
+                    .orElseThrow(() -> new IllegalArgumentException("User not found"));
+
+            GetUserResponse reply = GetUserResponse.newBuilder()
+                    .setUserId(user.getId().toString())
+                    .setEmail(user.getEmail())
+                    .setFirstName(user.getFirstName())
+                    .setLastName(user.getLastName())
+                    .setPhone(user.getPhone() != null ? user.getPhone() : "")
+                    .setRole(kz.courier.auth.v1.Role.valueOf(user.getRole().name()))
+                    .setIsEmailVerified(user.isEmailVerified())
+                    .setCreatedAt(Timestamp.newBuilder()
+                            .setSeconds(user.getCreatedAt().toEpochSecond(ZoneOffset.UTC))
+                            .build())
+                    .build();
+            resp.onNext(reply);
+            resp.onCompleted();
+
+        } catch (Exception e) {
+            resp.onError(Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
+        }
+    }
+
+    /* ====================== UPDATE USER ====================== */
+    @Override
+    public void updateUser(UpdateUserRequest req, StreamObserver<kz.courier.common.v1.Response> resp) {
+        try {
+            UUID userId = UUID.fromString(req.getUserId());
+            User user = userRepo.findById(userId)
+                    .orElseThrow(() -> new IllegalArgumentException("User not found"));
+
+            if (req.hasEmail()) {
+                validateEmail(req.getEmail());
+                if (userRepo.existsByEmail(req.getEmail())) {
+                    fail(resp, "EMAIL_EXISTS", "E-mail already taken");
+                    return;
+                }
+                user.setEmail(req.getEmail());
+            }
+            if (req.hasFirstName())   user.setFirstName(req.getFirstName());
+            if (req.hasLastName())    user.setLastName(req.getLastName());
+            if (req.hasPhone())       user.setPhone(req.getPhone());
+            if (req.hasPushConsent()) user.setPushConsent(req.getPushConsent());
+
+            user.setUpdatedAt(LocalDateTime.now());
+            userRepo.save(user);
+
+            resp.onNext(successResponse());
+            resp.onCompleted();
+
+        } catch (Exception e) {
+            resp.onError(Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
+        }
+    }
+
+    /* ====================== CHANGE PASSWORD ====================== */
+    @Override
+    public void changePassword(ChangePasswordRequest req, StreamObserver<kz.courier.common.v1.Response> resp) {
+        try {
+            UUID userId = UUID.fromString(req.getUserId());
+            User user = userRepo.findById(userId)
+                    .orElseThrow(() -> new IllegalArgumentException("User not found"));
+
+            if (!passwordEncoder.matches(req.getOldPassword(), user.getPasswordHash())) {
+                fail(resp, "INVALID_PASSWORD", "Current password is incorrect");
+                return;
+            }
+
+            validatePassword(req.getNewPassword());
+            user.setPasswordHash(passwordEncoder.encode(req.getNewPassword()));
+            user.setUpdatedAt(LocalDateTime.now());
+            userRepo.save(user);
+
+            notificationProducer.publish(NotificationEvent.builder()
+                    .userId(user.getId().toString())
+                    .type("password_changed")
+                    .payload(Map.of(
+                            "user_name",  user.getFirstName(),
+                            "email",      user.getEmail(),
+                            "changed_at", Instant.now().toString()
+                    ))
+                    .build());
+
+            resp.onNext(successResponse());
+            resp.onCompleted();
+
+        } catch (Exception e) {
+            resp.onError(Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
+        }
+    }
+
+    /* ====================== DELETE USER ====================== */
+    @Override
+    public void deleteUser(DeleteUserRequest req, StreamObserver<kz.courier.common.v1.Response> resp) {
+        try {
+            UUID userId = UUID.fromString(req.getUserId());
+            User user = userRepo.findById(userId)
+                    .orElseThrow(() -> new IllegalArgumentException("User not found"));
+
+            String firstName = user.getFirstName();
+            String email     = user.getEmail();
+            String deletedAt = Instant.now().toString();
+
+            tokenRepo.deleteAllByUser(user);
+            logRepo.deleteAllByUser(user);
+            userRepo.delete(user);
+
+            notificationProducer.publish(NotificationEvent.builder()
+                    .userId(userId.toString())
+                    .type("account_deleted")
+                    .payload(Map.of(
+                            "user_name",  firstName,
+                            "email",      email,
+                            "deleted_at", deletedAt
+                    ))
+                    .build());
+
+            resp.onNext(successResponse());
+            resp.onCompleted();
+
+        } catch (Exception e) {
+            resp.onError(Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
+        }
     }
 
     /* ====================== LIST USERS (admin) ====================== */
     @Override
     public void listUsers(ListUsersRequest req, StreamObserver<ListUsersResponse> resp) {
-        var page = req.getPagination();
-        var pageable = org.springframework.data.domain.PageRequest.of(page.getPage() - 1, page.getPageSize());
-        var usersPage = userRepo.findAll(pageable);
+        var page      = req.getPagination();
+        var pageable  = org.springframework.data.domain.PageRequest.of(
+                page.getPage() - 1, page.getPageSize());
+        var usersPage = req.hasFilterRole()
+                ? userRepo.findByRole(Role.valueOf(req.getFilterRole()), pageable)
+                : userRepo.findAll(pageable);
 
         var builder = ListUsersResponse.newBuilder()
                 .setResponse(successResponse())
@@ -209,15 +350,9 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
 
     /* ====================== HELPERS ====================== */
     private void fail(StreamObserver<?> obs, String code, String msg) {
-        var r = kz.courier.common.v1.Response.newBuilder()
-                .setSuccess(false)
-                .setError(kz.courier.common.v1.Error.newBuilder().setCode(code).setMessage(msg).build())
-                .setTimestamp(nowTs())
-                .build();
-        if (obs instanceof StreamObserver s) {
-            ((StreamObserver<kz.courier.common.v1.Response>) s).onNext(r);
-            s.onCompleted();
-        }
+        obs.onError(Status.INVALID_ARGUMENT
+                .withDescription(code + ": " + msg)
+                .asRuntimeException());
     }
 
     private kz.courier.common.v1.Response successResponse() {

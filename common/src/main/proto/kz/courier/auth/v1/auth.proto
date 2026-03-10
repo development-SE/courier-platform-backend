@@ -14,6 +14,9 @@ enum Role {
   COURIER = 2;
   PARTNER = 3;
   ADMIN = 4;
+  SUPER_ADMIN = 5;
+  DIRECTOR = 6;
+  MANAGER = 7;
 }
 
 // Registration request

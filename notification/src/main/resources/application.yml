@@ -1,0 +1,40 @@
+spring:
+  application:
+    name: notification-service
+
+  # ── Kafka ──────────────────────────────────────────────────────────────────
+  kafka:
+    bootstrap-servers: localhost:29092        # same broker as auth-service
+    consumer:
+      group-id: notification-service
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "kz.courier.*"
+        spring.json.value.default.type: kz.courier.notificationservice.dto.NotificationEvent
+
+  # ── Mail (SMTP) ─────────────────────────────────────────────────────────────
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: zheka5552555@gmail.com
+    password: qxvojuqxnyfatqan
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+
+server:
+  port: 8082                                  # 8081 is taken by auth-service
+
+notification:
+  kafka:
+    topic: notification-kafka-topic
+    dead-letter-topic: notification-kafka-topic.DLT
+    retry-attempts: 3
+    retry-delay-ms: 1000
+  mail:
+    from: "Courier <your@gmail.com>"

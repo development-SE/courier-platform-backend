@@ -1,9 +1,11 @@
 # auth-service/src/main/resources/application.yml
 spring:
+  application:
+    name: auth-service
   datasource:
-    url: jdbc:postgresql://localhost:5433/auth_db
+    url: jdbc:postgresql://localhost:55433/auth_db
     username: auth_svc
-    password: auth_secret
+    password: auth
     driver-class-name: org.postgresql.Driver
   jpa:
     hibernate:
@@ -20,6 +22,8 @@ spring:
     consumer:
       group-id: auth-service
       auto-offset-reset: earliest
+      
+notification-kafka-topic: notification-kafka-topic
 
 server:
   port: 8081
@@ -29,11 +33,16 @@ grpc:
     port: 9091
 
 jwt:
-  secret: ${JWT_SECRET:super-long-random-base64-string}
-  access-expiry-min: 15
+  secret: ${JWT_SECRET:my-super-secret-key-at-least-32chars!!}
+  access-expiry-min: 1440 #later will be15
   refresh-expiry-min: 10080   # 7 days
 
-#notification:
-#  grpc:
-#    host: notification-service
-#    port: 9094
+eureka:
+  client:
+    serviceUrl:
+      defaultZone: http://localhost:8761/eureka/
+    fetch-registry: true
+    register-with-eureka: true
+  instance:
+    prefer-ip-address: true
+

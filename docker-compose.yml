@@ -10,7 +10,7 @@ services:
       POSTGRES_PASSWORD: secret_master
       POSTGRES_DB:       postgres          # default DB (not used by services)
     ports:
-      - "5433:5432"
+      - "55433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       # 1. Init script to create all DBs + users

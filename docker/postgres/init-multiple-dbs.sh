@@ -16,6 +16,7 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
   CREATE ROLE payment_svc LOGIN PASSWORD 'payment_secret';
   CREATE ROLE admin_svc LOGIN PASSWORD 'admin_secret';
   CREATE ROLE courier_svc LOGIN PASSWORD 'courier_secret';
+  CREATE ROLE company_svc LOGIN PASSWORD 'company_secret';
 
   ----------------------------------------------------------------
   -- 2. Create dedicated database per service
@@ -27,6 +28,7 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
   CREATE DATABASE payment_db  OWNER payment_svc;
   CREATE DATABASE admin_db    OWNER admin_svc;
   CREATE DATABASE courier_db  OWNER courier_svc;
+  CREATE DATABASE company_db OWNER company_svc ENCODING 'UTF8';
 
   ----------------------------------------------------------------
   -- 3. Grant CONNECT + extensions
@@ -38,6 +40,7 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
   GRANT CONNECT ON DATABASE payment_db  TO payment_svc;
   GRANT CONNECT ON DATABASE admin_db    TO admin_svc;
   GRANT CONNECT ON DATABASE courier_db  TO courier_svc;
+  GRANT CONNECT ON DATABASE company_db TO company_svc;
 
   -- Enable useful extensions in every DB
   \c auth_db
@@ -45,6 +48,9 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
   CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
   \c catalog_db
+  CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+  \c company_db
   CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
   \c order_db
