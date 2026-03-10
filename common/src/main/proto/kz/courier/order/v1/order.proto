@@ -1,0 +1,170 @@
+syntax = "proto3";
+
+package kz.courier.order.v1;
+
+option java_package = "kz.courier.order.v1";
+option java_multiple_files = true;
+
+import "kz/courier/common/v1/common.proto";
+import "google/protobuf/timestamp.proto";
+
+// ────────────────────────────────────────────────────────────────
+// Enums — domain-specific, clear names, no ambiguity
+// ────────────────────────────────────────────────────────────────
+
+enum OrderStatus {
+  ORDER_STATUS_UNSPECIFIED = 0;
+
+  NEW          = 1;  // Just created, not yet seen by partner
+  ACCEPTED     = 2;  // Partner confirmed, timer for preparation starts
+  PREPARING    = 3;  // Partner is cooking / assembling
+  READY        = 4;  // Ready for courier pickup
+  ASSIGNED     = 5;  // Courier assigned (new status — important for assignment logic)
+  PICKED_UP    = 6;  // Courier picked up from partner
+  IN_TRANSIT   = 7;  // Courier is moving to client
+  DELIVERED    = 8;  // Successfully handed to client
+  CANCELLED    = 9;  // Cancelled by any party (client, partner, system)
+  REJECTED     = 10; // Partner explicitly rejected (e.g., out of stock)
+}
+
+enum ServiceType {
+  SERVICE_TYPE_UNSPECIFIED = 0;
+  STANDARD   = 1;   // Normal delivery (cheapest, default)
+  SCHEDULED  = 2;   // Pre-scheduled (client chooses time window)
+  EXPRESS    = 3;   // Priority / fastest (higher fee)
+  // Add more later: SAME_DAY, ECO, DOCUMENT, etc.
+}
+
+enum AddressType {
+  ADDRESS_TYPE_UNSPECIFIED = 0;
+  USER     = 1;     // Personal / residential
+  COMPANY  = 2;     // Business / partner location
+}
+
+// ────────────────────────────────────────────────────────────────
+// Messages — reusable, clean, optional fields where makes sense
+// ────────────────────────────────────────────────────────────────
+
+message Address {
+  string address_id     = 1;
+  AddressType type      = 2;
+  string city           = 3;
+  string street         = 4;
+  string house          = 5;
+  optional string apartment = 6;
+  optional string entrance  = 7;
+  optional string floor     = 8;
+  double latitude       = 9;
+  double longitude      = 10;
+  google.protobuf.Timestamp created_at = 11;
+  google.protobuf.Timestamp updated_at = 12;
+}
+
+message ContactInfo {
+  string contact_id     = 1;
+  string name           = 2;
+  optional string surname = 3;
+  string phone          = 4;   // mandatory, validate format in service
+  google.protobuf.Timestamp created_at = 5;
+  google.protobuf.Timestamp updated_at = 6;
+}
+
+message OrderItem {
+  string item_id      = 1;          // reference to partner menu item (or free text)
+  string name         = 2;          // display name
+  int32  quantity     = 3;
+  optional double price     = 4;    // optional — many items have no price (documents, services)
+//  repeated string options   = 5;    // e.g. "no onions", "extra cheese"
+//  optional string comment   = 6;    // per-item comment
+}
+
+// ────────────────────────────────────────────────────────────────
+// CRUD + List Requests / Responses
+// ────────────────────────────────────────────────────────────────
+
+message CreateOrderRequest {
+  repeated OrderItem items            = 1;
+  ServiceType service_type            = 2;
+  string comment                      = 3;
+  Address delivery_address            = 4;
+  ContactInfo recipient_info          = 5;
+  Address pickup_address              = 6;
+  ContactInfo pickup_info             = 7;
+}
+
+message CreateOrderResponse {
+  kz.courier.common.v1.Response response = 1;
+  string order_id                        = 2;
+  string delivery_addr_id                = 3;
+  string recipient_contact_id            = 4;
+  string pickup_addr_id                  = 5;
+  string pickup_contact_id               = 6;
+}
+
+message GetOrderRequest {
+  string order_id = 1;
+}
+
+message GetOrderResponse {
+  kz.courier.common.v1.Response response = 1;
+  string order_id                        = 2;
+  OrderStatus status                     = 3;
+  ServiceType service_type               = 4;
+  string comment                         = 5;
+  Address delivery_address               = 6;
+  ContactInfo recipient_info             = 7;
+  Address pickup_address                 = 8;
+  ContactInfo pickup_info                = 9;
+  repeated OrderItem items               = 10;
+  google.protobuf.Timestamp created_at   = 11;
+  google.protobuf.Timestamp updated_at   = 12;
+}
+
+message UpdateOrderStatusRequest {
+  string order_id     = 1;
+  OrderStatus new_status = 2;
+  optional string reason = 3;   // mandatory for CANCELLED / REJECTED
+}
+
+message UpdateOrderStatusResponse {
+  kz.courier.common.v1.Response response = 1;
+  OrderStatus current_status             = 2;
+}
+
+// ────────────────────────────────────────────────────────────────
+// List / Search (paginated + filtered)
+// ────────────────────────────────────────────────────────────────
+
+message ListOrdersRequest {
+  kz.courier.common.v1.PaginationRequest pagination = 1;
+
+  // Filters — all optional
+  optional OrderStatus status        = 2;
+  optional string client_id          = 3;
+  optional string partner_id         = 4;
+  optional string courier_id         = 5;
+  optional google.protobuf.Timestamp created_after  = 6;
+  optional google.protobuf.Timestamp created_before = 7;
+
+  // Sorting
+  optional string sort_by            = 8;  // "created_at", "status", "total_amount" (add later)
+  optional bool sort_desc            = 9;
+}
+
+message ListOrdersResponse {
+  kz.courier.common.v1.Response response = 1;
+  repeated GetOrderResponse orders       = 2;  // full order details
+  kz.courier.common.v1.PaginationResponse pagination = 3;
+  int32 total_count                      = 4;
+}
+
+// ────────────────────────────────────────────────────────────────
+// Service Definition
+// ────────────────────────────────────────────────────────────────
+
+service OrderService {
+  rpc CreateOrder(CreateOrderRequest) returns (CreateOrderResponse);
+  rpc GetOrder(GetOrderRequest) returns (GetOrderResponse);
+  rpc UpdateOrderStatus(UpdateOrderStatusRequest) returns (UpdateOrderStatusResponse);
+  rpc ListOrders(ListOrdersRequest) returns (ListOrdersResponse);
+}

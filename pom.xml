@@ -16,6 +16,7 @@
         <module>eureka-server</module>
         <module>user-service</module>
         <module>notification-service</module>
+        <module>order-service</module>
         <!-- add other modules here -->
     </modules>
 </project>
