@@ -37,7 +37,7 @@ public final class OrderMapper {
     public static Address toAddressEntity(kz.courier.order.v1.Address proto) {
         return Address.builder()
                 .type(AddressType.valueOf(
-                        proto.getType().name().replace("ADDRESS_TYPE_", "")))
+                        proto.getType().name()))
                 .city(proto.getCity())
                 .street(proto.getStreet())
                 .house(proto.getHouse())
@@ -56,7 +56,7 @@ public final class OrderMapper {
         var builder = kz.courier.order.v1.Address.newBuilder()
                 .setAddressId(e.getId().toString())
                 .setType(kz.courier.order.v1.AddressType.valueOf(
-                        "ADDRESS_TYPE_" + e.getType().name()))
+                        e.getType().name()))
                 .setCity(e.getCity())
                 .setStreet(e.getStreet())
                 .setHouse(e.getHouse())

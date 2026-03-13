@@ -35,7 +35,7 @@ spring:
 
 grpc:
   server:
-    port: 9093
+    port: 9095
 
 # ========== EUREKA CLIENT CONFIGURATION ==========
 eureka:

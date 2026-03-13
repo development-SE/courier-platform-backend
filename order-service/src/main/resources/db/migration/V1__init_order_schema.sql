@@ -8,9 +8,7 @@ CREATE TABLE addresses (
     company_id  UUID,                   -- NULL if this is personal address
 
     -- Type discriminator
-    type        TEXT NOT NULL
-                    CHECK (type IN ('USER', 'COMPANY'))
-                    DEFAULT 'USER',
+    type        TEXT NOT NULL,
 
     -- Address components
     city        TEXT NOT NULL,

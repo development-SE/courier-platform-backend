@@ -124,7 +124,6 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
         } catch (Exception e) {
             log.error("[gRPC] createOrder unexpected error", e);
             responseObserver.onError(Status.INTERNAL.withDescription("Internal error").asRuntimeException());
-            return;
         }
     }
 

@@ -2,7 +2,7 @@ version: "3.9"
 
 services:
   postgres:
-    image: postgis/postgis:16-3.4   # ← PostGIS already included
+    image: postgis/postgis:16-3.5   # ← PostGIS already included
     container_name: courier-postgres
     restart: unless-stopped
     environment:
