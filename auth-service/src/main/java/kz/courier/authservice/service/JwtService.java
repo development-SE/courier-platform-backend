@@ -18,8 +18,6 @@ public class JwtService {
     public JwtService(@Value("${jwt.secret}") String secret,
                       @Value("${jwt.access-expiry-min}") long accessMin,
                       @Value("${jwt.refresh-expiry-min}") long refreshMin) {
-        secret = Jwts.SIG.HS256.key().toString();
-        System.out.println(secret);
         this.secretKey = Keys.hmacShaKeyFor(secret.getBytes());
         this.accessExpMs = accessMin * 60 * 1000;
         this.refreshExpMs = refreshMin * 60 * 1000;

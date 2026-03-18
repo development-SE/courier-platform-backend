@@ -32,7 +32,7 @@ grpc:
     port: 9091
 
 jwt:
-  secret: ${JWT_SECRET:super-long-random-base64-string}
+  secret: ${JWT_SECRET:mysupersecretjwtkeythatismorethan32characterslong123}
   access-expiry-min: 15
   refresh-expiry-min: 10080   # 7 days
 

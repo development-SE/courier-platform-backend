@@ -89,9 +89,9 @@ grpc:
       address: discovery:///auth-service  # ← Discovers via Eureka!
       negotiationType: PLAINTEXT
 
-#    order-service:
-#      address: static://localhost:9091
-#      negotiationType: PLAINTEXT
+    order-service:
+      address: discovery:///order-service
+      negotiationType: PLAINTEXT
 #    courier-service:
 #      address: static://localhost:9092
 #      negotiationType: PLAINTEXT
@@ -104,7 +104,7 @@ grpc:
 
 # JWT Configuration
 jwt:
-  secret: ${JWT_SECRET:super-long-random-base64-string}
+  secret: ${JWT_SECRET:mysupersecretjwtkeythatismorethan32characterslong123}
   expiration: 86400000 # 24 hours
   refresh-expiration: 604800000 # 7 days
 
