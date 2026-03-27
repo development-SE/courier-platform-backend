@@ -37,7 +37,7 @@ spring:
       routes:
         # user-service  →  GET/POST/PUT/DELETE /api/v1/users/**
         - id: user-service
-          uri: http://localhost:8084
+          uri: lb://user-service   # load-balanced via Eureka
           predicates:
             - Path=/api/v1/users/**
           filters:

@@ -1,5 +1,6 @@
 package kz.courier.userservice.controller;
 
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import kz.courier.userservice.dto.UserDto;
 import kz.courier.userservice.model.Role;
@@ -9,6 +10,9 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -17,6 +21,17 @@ import java.util.UUID;
 public class UserController {
 
     private final UserService userService;
+
+    @GetMapping("/debug/headers")
+    public ResponseEntity<Map<String, String>> debugHeaders(
+            HttpServletRequest request) {
+        
+        Map<String, String> headers = new HashMap<>();
+        Collections.list(request.getHeaderNames())
+                .forEach(name -> headers.put(name, request.getHeader(name)));
+        
+        return ResponseEntity.ok(headers);
+    }
 
     /**
      * POST /users
