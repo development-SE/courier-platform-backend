@@ -1,0 +1,46 @@
+syntax = "proto3";
+package kz.courier.common.v1;
+option java_package = "kz.courier.common.v1";
+option java_multiple_files = true;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/empty.proto";
+
+// Shared error message
+message Error {
+  string code = 1;  // e.g., "INVALID_EMAIL", "EMAIL_EXISTS"
+  string message = 2;  // Human-readable error
+  repeated string details = 3;  // Additional context
+}
+
+// Base response wrapper for all services
+message Response {
+  bool success = 1;
+  Error error = 2;
+  google.protobuf.Timestamp timestamp = 3;
+}
+
+// Pagination request for list operations
+message PaginationRequest {
+  int32 page = 1;  // 1-based page number
+  int32 page_size = 2;  // Items per page
+  string sort_by = 3;  // e.g., "created_at"
+  bool ascending = 4;
+}
+
+// Pagination response
+message PaginationResponse {
+  int32 total_items = 1;
+  int32 current_page = 2;
+  int32 page_size = 3;
+  int32 total_pages = 4;
+}
+
+// Common enums
+enum Status {
+  STATUS_UNSPECIFIED = 0;
+  ACTIVE = 1;
+  INACTIVE = 2;
+  PENDING = 3;
+  REJECTED = 4;
+}

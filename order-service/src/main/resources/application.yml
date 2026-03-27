@@ -1,0 +1,79 @@
+# order-service/src/main/resources/application.yml
+spring:
+  application:
+    name: order-service
+
+  datasource:
+    url: jdbc:postgresql://localhost:5433/order_db
+    username: order_svc
+    password: order_secret
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: none
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+  flyway:
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
+  kafka:
+    bootstrap-servers: localhost:29092
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+    consumer:
+      group-id: order-service
+      auto-offset-reset: earliest
+
+  main:
+    web-application-type: none
+
+grpc:
+  server:
+    port: 9095
+
+# ========== EUREKA CLIENT CONFIGURATION ==========
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+    fetch-registry: true
+    register-with-eureka: true
+  instance:
+    prefer-ip-address: true
+    instance-id: ${spring.application.name}:${random.value}
+    lease-renewal-interval-in-seconds: 10
+    lease-expiration-duration-in-seconds: 30
+    metadata-map:
+      grpc-port: ${grpc.server.port}
+      version: "1.0.0"
+      zone: "default"
+
+# Actuator (required for Eureka health checks)
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
+
+# Logging
+logging:
+  level:
+    io.grpc: DEBUG
+    net.devh.boot.grpc: DEBUG
+    root: INFO
+    kz.courier.orderservice: DEBUG
+    com.netflix.discovery: INFO
+
+# Kafka topics
+kafka:
+  topic:
+    order-events: kafka-order-events

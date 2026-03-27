@@ -13,25 +13,26 @@
     </parent>
 
     <groupId>kz.courier</groupId>
-    <artifactId>auth-service</artifactId>
+    <artifactId>order-service</artifactId>
     <version>0.0.1-SNAPSHOT</version>
-    <name>auth-service</name>
-    <description>Authentication service for courier platform</description>
+    <name>order-service</name>
+    <description>Order service for courier platform</description>
 
     <properties>
         <!-- JDK -->
         <java.version>21</java.version>
         <maven.compiler.release>21</maven.compiler.release>
 
-        <!-- Общие версии (синхронизация с common) -->
+        <!-- gRPC / Protobuf — kept in sync with common -->
         <grpc.version>1.76.0</grpc.version>
-        <protobuf.version>4.32.1</protobuf.version> <!-- ← СИНХРОНИЗИРОВАНО с common -->
-        <lombok.version>1.18.38</lombok.version>     <!-- ← КРИТИЧНО: JDK 21! -->
+        <protobuf.version>4.32.1</protobuf.version>
+        <lombok.version>1.18.38</lombok.version>
 
-        <!-- Остальные -->
-        <jjwt.version>0.12.6</jjwt.version>
+        <!-- DB / migration -->
         <flyway.version>10.7.1</flyway.version>
         <postgresql.version>42.7.2</postgresql.version>
+
+        <!-- Plugin versions -->
         <maven-compiler-plugin.version>3.13.0</maven-compiler-plugin.version>
         <os-maven-plugin.version>1.7.1</os-maven-plugin.version>
         <protobuf-maven-plugin.version>0.6.1</protobuf-maven-plugin.version>
@@ -49,9 +50,7 @@
         </extensions>
 
         <plugins>
-
-
-            <!-- === Компиляция === -->
+            <!-- === Compiler === -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
@@ -72,7 +71,6 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
-                <!-- УБИРАЕМ ВЕРСИЮ — берётся из parent -->
                 <configuration>
                     <excludes>
                         <exclude>
@@ -97,14 +95,14 @@
         </dependencies>
     </dependencyManagement>
 
-
     <dependencies>
+        <!-- === Eureka Client === -->
         <dependency>
             <groupId>org.springframework.cloud</groupId>
             <artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
         </dependency>
 
-        <!-- === Common Project Module === -->
+        <!-- === Common Proto Module === -->
         <dependency>
             <groupId>kz.courier</groupId>
             <artifactId>common</artifactId>
@@ -119,10 +117,6 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-jpa</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-security</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -158,25 +152,6 @@
             <artifactId>spring-kafka</artifactId>
         </dependency>
 
-        <!-- === JWT === -->
-        <dependency>
-            <groupId>io.jsonwebtoken</groupId>
-            <artifactId>jjwt-api</artifactId>
-            <version>${jjwt.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>io.jsonwebtoken</groupId>
-            <artifactId>jjwt-impl</artifactId>
-            <version>${jjwt.version}</version>
-            <scope>runtime</scope>
-        </dependency>
-        <dependency>
-            <groupId>io.jsonwebtoken</groupId>
-            <artifactId>jjwt-jackson</artifactId>
-            <version>${jjwt.version}</version>
-            <scope>runtime</scope>
-        </dependency>
-
         <!-- === DB === -->
         <dependency>
             <groupId>org.postgresql</groupId>
@@ -202,6 +177,20 @@
             <optional>true</optional>
         </dependency>
 
+        <!-- === Protobuf (needed for proto-generated classes) === -->
+        <dependency>
+            <groupId>com.google.protobuf</groupId>
+            <artifactId>protobuf-java</artifactId>
+            <version>${protobuf.version}</version>
+            <scope>compile</scope>
+        </dependency>
+
+        <!-- === Jackson (for JSONB serialization) === -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+
         <!-- === Tests === -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -212,12 +201,6 @@
             <groupId>org.springframework.kafka</groupId>
             <artifactId>spring-kafka-test</artifactId>
             <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>com.google.protobuf</groupId>
-            <artifactId>protobuf-java</artifactId>
-            <version>4.32.1</version>
-            <scope>compile</scope>
         </dependency>
     </dependencies>
 
