@@ -73,5 +73,9 @@ public class RoleFilter extends AbstractGatewayFilterFactory<RoleFilter.Config> 
     @NoArgsConstructor
     public static class Config {
         private List<String> roles;
+
+        public Config(String... roles) {
+            this.roles = Arrays.asList(roles);
+        }
     }
 }

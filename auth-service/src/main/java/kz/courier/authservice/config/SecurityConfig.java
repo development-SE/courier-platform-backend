@@ -27,17 +27,6 @@ public class SecurityConfig {
     private final JwtService jwtService;
 
     @Bean
-    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-        return http
-                .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/auth/register", "/auth/verify").permitAll()
-                        .anyRequest().authenticated()
-                )
-                .addFilterBefore(jwtFilter(), UsernamePasswordAuthenticationFilter.class)
-                .build();
-    }
-
-    @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
     }

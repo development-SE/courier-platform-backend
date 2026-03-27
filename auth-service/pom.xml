@@ -35,6 +35,8 @@
         <maven-compiler-plugin.version>3.13.0</maven-compiler-plugin.version>
         <os-maven-plugin.version>1.7.1</os-maven-plugin.version>
         <protobuf-maven-plugin.version>0.6.1</protobuf-maven-plugin.version>
+
+        <spring-cloud.version>2025.0.1</spring-cloud.version>
     </properties>
 
     <dependencyManagement>
@@ -59,47 +61,7 @@
         </extensions>
 
         <plugins>
-            <!-- === Protobuf + gRPC === -->
-            <plugin>
-                <groupId>org.xolstice.maven.plugins</groupId>
-                <artifactId>protobuf-maven-plugin</artifactId>
-                <version>${protobuf-maven-plugin.version}</version>
-                <configuration>
-                    <!-- СИНХРОНИЗИРОВАНО с common -->
-                    <protocArtifact>com.google.protobuf:protoc:${protobuf.version}:exe:${os.detected.classifier}</protocArtifact>
-                    <pluginId>grpc-java</pluginId>
-                    <pluginArtifact>io.grpc:protoc-gen-grpc-java:${grpc.version}:exe:${os.detected.classifier}</pluginArtifact>
-                    <protoSourceRoot>${project.basedir}/src/main/proto</protoSourceRoot>
-                </configuration>
-                <executions>
-                    <execution>
-                        <goals>
-                            <goal>compile</goal>
-                            <goal>compile-custom</goal>
-                        </goals>
-                    </execution>
-                </executions>
-            </plugin>
 
-            <!-- === Добавляем generated-sources из common === -->
-            <plugin>
-                <groupId>org.codehaus.mojo</groupId>
-                <artifactId>build-helper-maven-plugin</artifactId>
-                <version>3.5.0</version>
-                <executions>
-                    <execution>
-                        <id>add-generated-sources</id>
-                        <phase>generate-sources</phase>
-                        <goals><goal>add-source</goal></goals>
-                        <configuration>
-                            <sources>
-                                <source>${project.basedir}/../common/target/generated-sources/protobuf/java</source>
-                                <source>${project.basedir}/../common/target/generated-sources/protobuf/grpc-java</source>
-                            </sources>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
 
             <!-- === Компиляция === -->
             <plugin>
@@ -135,7 +97,13 @@
         </plugins>
     </build>
 
+
     <dependencies>
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
+        </dependency>
+
         <!-- === Common Project Module === -->
         <dependency>
             <groupId>kz.courier</groupId>

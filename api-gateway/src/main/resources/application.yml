@@ -5,6 +5,7 @@ spring:
   application:
     name: api-gateway
 
+  # Cloud Gateway Configuration
   cloud:
     config:
       enabled: false
@@ -12,16 +13,16 @@ spring:
     gateway:
       discovery:
         locator:
-          enabled: true
-          lower-case-service-id: true
+          enabled: true  # Enable automatic route creation from Eureka
+          lower-case-service-id: true  # Convert service names to lowercase
 
-      # ── Global CORS ────────────────────────────────────────────────────────
+      # Global CORS Configuration
       globalcors:
         cors-configurations:
           '[/**]':
             allowedOrigins:
               - "http://localhost:3000"
-              - "http://localhost:5173"
+              - "http://localhost:5173" # Common Vite default
             allowedMethods:
               - GET
               - POST
@@ -57,16 +58,9 @@ spring:
             - name: LoggingFilter
             - StripPrefix=2
 
-        # auth-service  →  /api/v1/auth/**
-        - id: auth-service
-          uri: http://localhost:8081
-          predicates:
-            - Path=/api/v1/auth/**
-          filters:
-            - name: LoggingFilter
-            - StripPrefix=2
 
-      # ── Default filters (applied to every route) ───────────────────────────
+
+      # Default Filters (applied to all routes)
       default-filters:
         - name: Retry
           args:
@@ -84,27 +78,58 @@ spring:
               requestedTokens: 1
         - AddRequestHeader=X-Gateway-Request, GatewayRequest
         - AddResponseHeader=X-Gateway-Response, GatewayResponse
+      server:
+        webflux:
+          filter:
+            json-to-grpc:
+              enabled: false
 
-  # ── Redis (rate limiter) ───────────────────────────────────────────────────
+  # Redis for Rate Limiting
   data:
     redis:
       host: localhost
       port: 6379
       timeout: 2000ms
 # ── gRPC clients ───────────────────────────────────────────────────────────────
+
+  # Eureka Client Configuration
+  eureka:
+    client:
+      serviceUrl:
+        defaultZone: http://localhost:8761/eureka/
+      fetch-registry: true
+      register-with-eureka: true
+    instance:
+      prefer-ip-address: true
+      instance-id: ${spring.application.name}:${random.value}
+
+# gRPC Client Configuration
 grpc:
   client:
     auth-service:
-      address: discovery:///auth-service   
+      address: discovery:///auth-service  # ← Discovers via Eureka!
       negotiationType: PLAINTEXT
 
-# ── JWT (must match auth-service) ─────────────────────────────────────────────
+    order-service:
+      address: discovery:///order-service
+      negotiationType: PLAINTEXT
+#    courier-service:
+#      address: static://localhost:9092
+#      negotiationType: PLAINTEXT
+#    partner-service:
+#      address: static://localhost:9093
+#      negotiationType: PLAINTEXT
+#    logistics-service:
+#      address: static://localhost:9094
+#      negotiationType: PLAINTEXT
+
+# JWT Configuration
 jwt:
   secret: ${JWT_SECRET:my-super-secret-key-at-least-32chars!!}
-  expiration: 86400000
-  refresh-expiration: 604800000
+  expiration: 86400000 # 24 hours
+  refresh-expiration: 604800000 # 7 days
 
-# ── Resilience4j ──────────────────────────────────────────────────────────────
+# Resilience4j Circuit Breaker Configuration
 resilience4j:
   circuitbreaker:
     instances:
@@ -117,6 +142,23 @@ resilience4j:
         failureRateThreshold: 50
         slowCallRateThreshold: 100
         slowCallDurationThreshold: 2s
+  #      orderServiceCircuitBreaker:
+  #        slidingWindowSize: 10
+  #        permittedNumberOfCallsInHalfOpenState: 3
+  #        waitDurationInOpenState: 10s
+  #        failureRateThreshold: 50
+  #      courierServiceCircuitBreaker:
+  #        slidingWindowSize: 10
+  #        permittedNumberOfCallsInHalfOpenState: 3
+  #        waitDurationInOpenState: 10s
+  #        failureRateThreshold: 50
+  #      partnerServiceCircuitBreaker:
+  #        slidingWindowSize: 10
+  #        permittedNumberOfCallsInHalfOpenState: 3
+  #        waitDurationInOpenState: 10s
+  #        failureRateThreshold: 50
+
+  # Rate Limiter Configuration
   ratelimiter:
     instances:
       default:
@@ -124,7 +166,7 @@ resilience4j:
         limitRefreshPeriod: 1s
         timeoutDuration: 0s
 
-# ── Actuator ──────────────────────────────────────────────────────────────────
+# Actuator Configuration
 management:
   endpoints:
     web:
@@ -134,7 +176,7 @@ management:
     health:
       show-details: always
 
-# ── Logging ───────────────────────────────────────────────────────────────────
+# Logging
 logging:
   level:
     root: INFO
@@ -146,12 +188,3 @@ logging:
     file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
   file:
     name: logs/api-gateway.log
-
-eureka:
-  client:
-    serviceUrl:
-      defaultZone: http://localhost:8761/eureka/
-    fetch-registry: true
-    register-with-eureka: true
-  instance:
-    prefer-ip-address: true

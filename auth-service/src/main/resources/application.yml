@@ -3,7 +3,7 @@ spring:
   application:
     name: auth-service
   datasource:
-    url: jdbc:postgresql://localhost:55433/auth_db
+    url: jdbc:postgresql://localhost:5433/auth_db
     username: auth_svc
     password: auth_secret
     driver-class-name: org.postgresql.Driver
@@ -22,11 +22,10 @@ spring:
     consumer:
       group-id: auth-service
       auto-offset-reset: earliest
-      
-notification-kafka-topic: notification-kafka-topic
+  main:
+    web-application-type: none
 
-server:
-  port: 8081
+notification-kafka-topic: notification-kafka-topic
 
 grpc:
   server:
@@ -37,12 +36,49 @@ jwt:
   access-expiry-min: 1440 #later will be15
   refresh-expiry-min: 10080   # 7 days
 
+#notification:
+#  grpc:
+#    host: notification-service
+#    port: 9094
+
+# ========== EUREKA CLIENT CONFIGURATION ==========
 eureka:
   client:
-    serviceUrl:
-      defaultZone: http://localhost:8761/eureka/
-    fetch-registry: true
-    register-with-eureka: true
+    service-url:
+      defaultZone: http://localhost:8761/eureka/  # Eureka Server address
+    fetch-registry: true  # Download registry of other services
+    register-with-eureka: true  # Register this service with Eureka
   instance:
-    prefer-ip-address: true
+    prefer-ip-address: true  # Use IP instead of hostname (important for Docker)
+    instance-id: ${spring.application.name}:${random.value}  # Unique instance ID
+    lease-renewal-interval-in-seconds: 10  # Heartbeat every 10s
+    lease-expiration-duration-in-seconds: 30  # Eureka removes if no heartbeat for 30s
+    metadata-map:
+      # Custom metadata for service discovery
+      grpc-port: ${grpc.server.port}  # ← API Gateway can read this!
+      version: "1.0.0"
+      zone: "default"
 
+# Actuator (required for Eureka health checks)
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
+
+# Logging
+logging:
+  level:
+    io.grpc: debug
+    net.devh.boot.grpc: DEBUG
+    root: INFO
+    kz.courier.authservice: DEBUG
+    com.netflix.discovery: INFO
+
+
+## external url paths
+API_BASE_URL: http://localhost:8080/
+API_VERIFY_PATH: api/v1/auth/verify
