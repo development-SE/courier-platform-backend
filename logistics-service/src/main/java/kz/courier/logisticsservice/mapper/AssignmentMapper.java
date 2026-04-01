@@ -1,0 +1,82 @@
+package kz.courier.logisticsservice.mapper;
+
+import kz.courier.logisticsservice.dto.LogisticsDto;
+import kz.courier.logisticsservice.dto.NearbycourierProjection;
+import kz.courier.logisticsservice.entity.AssignmentHistory;
+import kz.courier.logisticsservice.entity.CourierAssignment;
+import kz.courier.logisticsservice.entity.CourierLocation;
+import org.springframework.data.domain.Page;
+import org.springframework.stereotype.Component;
+
+import java.util.List;
+
+@Component
+public class AssignmentMapper {
+
+    public LogisticsDto.AssignmentResponse toResponse(CourierAssignment a) {
+        return LogisticsDto.AssignmentResponse.builder()
+                .id(a.getId())
+                .orderId(a.getOrderId())
+                .courierId(a.getCourierId())
+                .assignedBy(a.getAssignedBy())
+                .assignmentStatus(a.getAssignmentStatus())
+                .assignedAt(a.getAssignedAt())
+                .acceptedAt(a.getAcceptedAt())
+                .pickedUpAt(a.getPickedUpAt())
+                .deliveredAt(a.getDeliveredAt())
+                .cancelledAt(a.getCancelledAt())
+                .etaMinutes(a.getEtaMinutes())
+                .actualDurationMinutes(a.getActualDurationMinutes())
+                .rejectionReason(a.getRejectionReason())
+                .cancellationReason(a.getCancellationReason())
+                .createdAt(a.getCreatedAt())
+                .updatedAt(a.getUpdatedAt())
+                .build();
+    }
+
+    public LogisticsDto.PagedAssignments toPagedResponse(Page<CourierAssignment> page) {
+        return LogisticsDto.PagedAssignments.builder()
+                .content(page.getContent().stream().map(this::toResponse).toList())
+                .currentPage(page.getNumber() + 1)
+                .pageSize(page.getSize())
+                .totalItems(page.getTotalElements())
+                .totalPages(page.getTotalPages())
+                .build();
+    }
+
+    public LogisticsDto.HistoryEntry toHistoryEntry(AssignmentHistory h) {
+        return LogisticsDto.HistoryEntry.builder()
+                .id(h.getId())
+                .assignmentId(h.getAssignmentId())
+                .oldStatus(h.getOldStatus())
+                .newStatus(h.getNewStatus())
+                .changedBy(h.getChangedBy())
+                .reason(h.getReason())
+                .changedAt(h.getChangedAt())
+                .build();
+    }
+
+    public LogisticsDto.CourierLocationResponse toLocationResponse(CourierLocation loc) {
+        return LogisticsDto.CourierLocationResponse.builder()
+                .courierId(loc.getCourierId())
+                .latitude(loc.getLatitude())
+                .longitude(loc.getLongitude())
+                .isOnline(loc.getIsOnline())
+                .updatedAt(loc.getUpdatedAt())
+                .build();
+    }
+
+    public List<LogisticsDto.NearbyCourierResponse> toNearbyCourierResponse(
+            List<NearbycourierProjection> projections) {
+        return projections.stream()
+                .map(p -> LogisticsDto.NearbyCourierResponse.builder()
+                        .courierId(p.getCourierId())
+                        .latitude(p.getLatitude())
+                        .longitude(p.getLongitude())
+                        .distanceMeters(p.getDistanceMeters())
+                        .isOnline(p.getIsOnline())
+                        .updatedAt(p.getUpdatedAt())
+                        .build())
+                .toList();
+    }
+}

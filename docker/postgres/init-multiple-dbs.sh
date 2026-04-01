@@ -17,6 +17,7 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
   CREATE ROLE admin_svc LOGIN PASSWORD 'admin_secret';
   CREATE ROLE courier_svc LOGIN PASSWORD 'courier_secret';
   CREATE ROLE company_svc LOGIN PASSWORD 'company_secret';
+  CREATE ROLE logistics_svc LOGIN PASSWORD 'logistics_secret';
 
   ----------------------------------------------------------------
   -- 2. Create dedicated database per service
@@ -29,6 +30,7 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
   CREATE DATABASE admin_db    OWNER admin_svc;
   CREATE DATABASE courier_db  OWNER courier_svc;
   CREATE DATABASE company_db OWNER company_svc ENCODING 'UTF8';
+  CREATE DATABASE logistics_db OWNER logistics_svc;
 
   ----------------------------------------------------------------
   -- 3. Grant CONNECT + extensions
@@ -41,6 +43,7 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
   GRANT CONNECT ON DATABASE admin_db    TO admin_svc;
   GRANT CONNECT ON DATABASE courier_db  TO courier_svc;
   GRANT CONNECT ON DATABASE company_db TO company_svc;
+  GRANT CONNECT ON DATABASE logistics_db TO logistics_svc;
 
   -- Enable useful extensions in every DB
   \c auth_db
@@ -58,6 +61,11 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
   CREATE EXTENSION IF NOT EXISTS postgis;
   CREATE EXTENSION IF NOT EXISTS earthdistance CASCADE;
   CREATE EXTENSION IF NOT EXISTS "btree_gist";   -- for time-range queries
+
+  \c logistics_db
+  CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+  CREATE EXTENSION IF NOT EXISTS postgis;
+  CREATE EXTENSION IF NOT EXISTS "btree_gist";
 
   -- … repeat for others if needed
 

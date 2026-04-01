@@ -58,6 +58,35 @@ spring:
             - name: LoggingFilter
             - StripPrefix=2
 
+        # ── Logistics Service — Assignments ──────────────────────────────────
+        # POST   /api/v1/logistics/assignments
+        # GET    /api/v1/logistics/assignments
+        # GET    /api/v1/logistics/assignments/{id}
+        # PATCH  /api/v1/logistics/assignments/{id}/status
+        # GET    /api/v1/logistics/assignments/{id}/history
+        - id: logistics-service-assignments
+          uri: lb://logistics-service
+          predicates:
+            - Path=/api/v1/logistics/assignments/**
+          filters:
+            - name: JwtAuthenticationFilter
+            - name: LoggingFilter
+            - StripPrefix=3   # /api/v1/logistics/assignments/... → /assignments/...
+
+        # ── Logistics Service — Courier Locations ─────────────────────────────
+        # PUT    /api/v1/logistics/couriers/{id}/location
+        # GET    /api/v1/logistics/couriers/{id}/location
+        # PATCH  /api/v1/logistics/couriers/{id}/online
+        # GET    /api/v1/logistics/couriers/nearby
+        - id: logistics-service-couriers
+          uri: lb://logistics-service
+          predicates:
+            - Path=/api/v1/logistics/couriers/**
+          filters:
+            - name: JwtAuthenticationFilter
+            - name: LoggingFilter
+            - StripPrefix=3   # /api/v1/logistics/couriers/... → /couriers/...
+
 
 
       # Default Filters (applied to all routes)
@@ -142,6 +171,14 @@ resilience4j:
         failureRateThreshold: 50
         slowCallRateThreshold: 100
         slowCallDurationThreshold: 2s
+      logisticsServiceCircuitBreaker:
+        slidingWindowSize: 10
+        permittedNumberOfCallsInHalfOpenState: 3
+        slidingWindowType: COUNT_BASED
+        minimumNumberOfCalls: 5
+        waitDurationInOpenState: 10s
+        failureRateThreshold: 50
+        slowCallDurationThreshold: 3s   # slightly longer — PostGIS queries can be heavy
   #      orderServiceCircuitBreaker:
   #        slidingWindowSize: 10
   #        permittedNumberOfCallsInHalfOpenState: 3

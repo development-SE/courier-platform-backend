@@ -18,6 +18,7 @@
         <module>notification</module>
         <module>order-service</module>
         <module>companyservice</module>
+        <module>logistics-service</module>
         <!-- add other modules here -->
     </modules>
 </project>

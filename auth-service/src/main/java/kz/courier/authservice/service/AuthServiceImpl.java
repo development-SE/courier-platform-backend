@@ -122,6 +122,11 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
     public void login(LoginRequest req, StreamObserver<LoginResponse> responseObserver) {
         userRepo.findByEmail(req.getEmail()).ifPresentOrElse(user -> {
 
+            if (!user.isEmailVerified()){
+                sendError(responseObserver, "EMAIL_NOT_VERIFIED", "E-mail not verified");
+                return;
+            }
+
             // Account status check first (security best practice)
             if (!user.isActive()) {
                 sendError(responseObserver, "ACCOUNT_INACTIVE", "Account is disabled or not activated.");
