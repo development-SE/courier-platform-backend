@@ -1,5 +1,6 @@
 package kz.courier.logisticsservice.exception;
 
+import jakarta.servlet.http.HttpServletRequest;
 import kz.courier.logisticsservice.dto.LogisticsDto;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;

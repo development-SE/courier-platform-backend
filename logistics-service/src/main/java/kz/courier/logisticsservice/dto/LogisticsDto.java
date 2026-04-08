@@ -71,6 +71,29 @@ public final class LogisticsDto {
             int  totalPages
     ) {}
 
+    /** Auto-assignment result with ranking diagnostics for dispatch transparency. */
+    @Builder
+    public record AutoAssignResponse(
+            AssignmentResponse assigned,
+            AutoAssignedCourier selectedCourier,
+            int scannedCouriers,
+            int eligibleCouriers,
+            double searchRadiusMeters,
+            OffsetDateTime evaluatedAt
+    ) {}
+
+    /** Explains why the chosen courier won the automatic dispatch score. */
+    @Builder
+    public record AutoAssignedCourier(
+            UUID courierId,
+            Double distanceMeters,
+            Integer etaMinutes,
+            Double distanceScore,
+            Double freshnessScore,
+            Double totalScore,
+            OffsetDateTime locationUpdatedAt
+    ) {}
+
     /** Single audit history entry */
     @Builder
     public record HistoryEntry(
@@ -87,7 +110,7 @@ public final class LogisticsDto {
     //  Courier Location DTOs
     // =========================================================================
 
-    /** Request body for PUT /couriers/{courierId}/location */
+    /** Request body for PUT /couriers/me/location */
     public record UpdateLocationRequest(
             @NotNull
             @DecimalMin("-90.0") @DecimalMax("90.0")
@@ -100,7 +123,7 @@ public final class LogisticsDto {
             @NotNull Boolean isOnline
     ) {}
 
-    /** Request body for PATCH /couriers/{courierId}/online */
+    /** Request body for PATCH /couriers/me/online */
     public record UpdateOnlineStatusRequest(
             @NotNull Boolean isOnline
     ) {}

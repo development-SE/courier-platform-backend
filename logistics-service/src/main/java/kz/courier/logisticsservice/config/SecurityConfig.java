@@ -1,5 +1,6 @@
 package kz.courier.logisticsservice.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -15,6 +16,7 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.access.AccessDeniedHandler;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -56,18 +58,21 @@ public class SecurityConfig {
                         .hasAnyRole("ADMIN", "SUPER_ADMIN", "MANAGER", "DIRECTOR")
 
                         // Couriers update their own location / online status
-                        .requestMatchers(HttpMethod.PUT, "/couriers/*/location").authenticated()
-                        .requestMatchers(HttpMethod.PATCH, "/couriers/*/online").authenticated()
+                        .requestMatchers(HttpMethod.PUT, "/couriers/me/location").authenticated()
+                        .requestMatchers(HttpMethod.PATCH, "/couriers/me/online").authenticated()
                         .requestMatchers(HttpMethod.GET, "/couriers/*/location").authenticated()
 
                         // Assignments — read for couriers, write for admins/managers
+                        .requestMatchers(HttpMethod.POST, "/assignments/auto/**")
+                        .hasAnyRole("ADMIN", "SUPER_ADMIN", "MANAGER", "DIRECTOR")
                         .requestMatchers(HttpMethod.POST, "/assignments")
                         .hasAnyRole("ADMIN", "SUPER_ADMIN", "MANAGER", "DIRECTOR")
                         .requestMatchers(HttpMethod.PATCH, "/assignments/*/status").authenticated()
                         .requestMatchers(HttpMethod.GET, "/assignments/**").authenticated()
 
                         .anyRequest().authenticated()
-                );
+                )
+                .exceptionHandling(ex -> ex.accessDeniedHandler(accessDeniedHandler()));
 
         return http.build();
     }
@@ -105,5 +110,20 @@ public class SecurityConfig {
 
             chain.doFilter(request, response);
         }
+    }
+
+    @Bean
+    public AccessDeniedHandler accessDeniedHandler() {
+        return (request, response, accessDeniedException) -> {
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            response.setContentType("application/json");
+
+            var body = new java.util.HashMap<String, Object>();
+            body.put("error", "FORBIDDEN");
+            body.put("message", "You do not have permission to access this resource");
+            body.put("path", request.getRequestURI());
+
+            new ObjectMapper().writeValue(response.getOutputStream(), body);
+        };
     }
 }

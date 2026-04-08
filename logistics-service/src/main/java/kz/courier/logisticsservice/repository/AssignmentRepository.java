@@ -9,6 +9,8 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -47,6 +49,17 @@ public interface AssignmentRepository extends JpaRepository<CourierAssignment, U
         ORDER BY a.assignedAt DESC
         """)
     Optional<CourierAssignment> findActiveAssignmentByCourierId(@Param("courierId") UUID courierId);
+
+    @Query("""
+        SELECT a.courierId
+        FROM CourierAssignment a
+        WHERE a.courierId IN :courierIds
+          AND a.assignmentStatus NOT IN
+              (kz.courier.logisticsservice.entity.AssignmentStatus.DELIVERED,
+               kz.courier.logisticsservice.entity.AssignmentStatus.CANCELLED,
+               kz.courier.logisticsservice.entity.AssignmentStatus.FAILED)
+        """)
+    List<UUID> findBusyCourierIds(@Param("courierIds") Collection<UUID> courierIds);
 
     boolean existsByOrderIdAndAssignmentStatusNotIn(UUID orderId, Iterable<AssignmentStatus> statuses);
 }

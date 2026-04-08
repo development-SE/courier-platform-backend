@@ -1,6 +1,6 @@
 package kz.courier.logisticsservice.dto;
 
-import java.time.OffsetDateTime;
+import java.time.Instant;
 import java.util.UUID;
 
 /**
@@ -19,5 +19,5 @@ public interface NearbycourierProjection {
 
     Boolean getIsOnline();
 
-    OffsetDateTime getUpdatedAt();
+    Instant getUpdatedAt();
 }

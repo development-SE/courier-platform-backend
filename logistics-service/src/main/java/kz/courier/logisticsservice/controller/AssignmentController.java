@@ -49,6 +49,18 @@ public class AssignmentController {
                 .body(LogisticsDto.ApiResponse.ok(body));
     }
 
+    /**
+     * Automatically selects the best currently available courier for the order.
+     */
+    @PostMapping("/auto/{orderId}")
+    public ResponseEntity<LogisticsDto.ApiResponse<LogisticsDto.AutoAssignResponse>> autoAssign(
+            @PathVariable UUID orderId) {
+
+        return ResponseEntity
+                .status(HttpStatus.CREATED)
+                .body(LogisticsDto.ApiResponse.ok(service.autoAssign(orderId)));
+    }
+
     // ── Read ──────────────────────────────────────────────────────────────────
 
     @GetMapping("/{id}")

@@ -153,7 +153,8 @@ public class OrderController {
                 case "ALREADY_EXISTS"                         -> HttpStatus.CONFLICT;
                 case "NOT_FOUND", "ORDER_NOT_FOUND"          -> HttpStatus.NOT_FOUND;
                 case "INVALID_ARGUMENT", "EMPTY_ITEMS",
-                     "TERMINAL_STATUS", "INVALID_UUID"       -> HttpStatus.BAD_REQUEST;
+                     "TERMINAL_STATUS", "INVALID_UUID",
+                     "INVALID_STATUS"                        -> HttpStatus.BAD_REQUEST;
                 case "PERMISSION_DENIED", "FORBIDDEN"        -> HttpStatus.FORBIDDEN;
                 case "UNAUTHENTICATED", "UNAUTHORIZED"       -> HttpStatus.UNAUTHORIZED;
                 default                                       -> HttpStatus.INTERNAL_SERVER_ERROR;

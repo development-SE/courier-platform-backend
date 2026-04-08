@@ -25,9 +25,11 @@ import net.devh.boot.grpc.server.service.GrpcService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -47,6 +49,9 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
 
+    private static final Set<String> PRIVILEGED_ROLES =
+            Set.of("ADMIN", "SUPER_ADMIN", "MANAGER", "DIRECTOR");
+
     private final OrderRepository   orderRepository;
     private final AddressRepository addressRepository;
     private final ContactRepository contactRepository;
@@ -61,10 +66,10 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
     public void createOrder(CreateOrderRequest request,
                             StreamObserver<CreateOrderResponse> responseObserver) {
 
-        AuthenticatedUser caller = GrpcAuthContext.AUTHENTICATED_USER_KEY.get();
-        log.info("[gRPC] createOrder author userId={}", caller.userId());
-
         try {
+            AuthenticatedUser caller = requireAuthenticatedUser();
+            log.info("[gRPC] createOrder author userId={}", caller.userId());
+
             // ── Validation ──────────────────────────────────────────────────
             if (request.getItemsList().isEmpty()) {
                 send(responseObserver,
@@ -121,6 +126,12 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
                     CreateOrderResponse.newBuilder()
                             .setResponse(errorResponse("INVALID_ARGUMENT", e.getMessage()))
                             .build());
+        } catch (OrderServiceException e) {
+            log.warn("[gRPC] createOrder rejected: {}", e.getMessage());
+            send(responseObserver,
+                    CreateOrderResponse.newBuilder()
+                            .setResponse(errorResponse(e.getCode(), e.getMessage()))
+                            .build());
         } catch (Exception e) {
             log.error("[gRPC] createOrder unexpected error", e);
             responseObserver.onError(Status.INTERNAL.withDescription("Internal error").asRuntimeException());
@@ -136,13 +147,14 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
     public void getOrder(GetOrderRequest request,
                          StreamObserver<GetOrderResponse> responseObserver) {
 
-        AuthenticatedUser caller = GrpcAuthContext.AUTHENTICATED_USER_KEY.get();
-        log.info("[gRPC] getOrder orderId={} caller={}", request.getOrderId(), caller.userId());
-
         try {
+            AuthenticatedUser caller = requireAuthenticatedUser();
+            log.info("[gRPC] getOrder orderId={} caller={}", request.getOrderId(), caller.userId());
+
             UUID id = UUID.fromString(request.getOrderId());
             Order order = orderRepository.findById(id)
                     .orElseThrow(() -> new OrderNotFoundException(request.getOrderId()));
+            authorizeOrderRead(caller, order);
 
             GetOrderResponse body = OrderMapper.toGetOrderResponse(order, objectMapper);
             // Attach the success wrapper
@@ -160,6 +172,12 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
                     GetOrderResponse.newBuilder()
                             .setResponse(errorResponse("INVALID_UUID", "Invalid UUID format"))
                             .build());
+        } catch (OrderServiceException e) {
+            log.warn("[gRPC] getOrder forbidden: {}", e.getMessage());
+            send(responseObserver,
+                    GetOrderResponse.newBuilder()
+                            .setResponse(errorResponse(e.getCode(), e.getMessage()))
+                            .build());
         } catch (Exception e) {
             log.error("[gRPC] getOrder error", e);
             responseObserver.onError(Status.INTERNAL.withDescription("Internal error").asRuntimeException());
@@ -176,11 +194,11 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
     public void updateOrderStatus(UpdateOrderStatusRequest request,
                                   StreamObserver<UpdateOrderStatusResponse> responseObserver) {
 
-        AuthenticatedUser caller = GrpcAuthContext.AUTHENTICATED_USER_KEY.get();
-        log.info("[gRPC] updateOrderStatus orderId={} newStatus={} caller={}",
-                request.getOrderId(), request.getNewStatus(), caller.userId());
-
         try {
+            AuthenticatedUser caller = requireAuthenticatedUser();
+            log.info("[gRPC] updateOrderStatus orderId={} newStatus={} caller={}",
+                    request.getOrderId(), request.getNewStatus(), caller.userId());
+
             UUID id = UUID.fromString(request.getOrderId());
             Order order = orderRepository.findById(id)
                     .orElseThrow(() -> new OrderNotFoundException(request.getOrderId()));
@@ -197,6 +215,7 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
 
             kz.courier.orderservice.model.OrderStatus newStatus =
                     kz.courier.orderservice.model.OrderStatus.valueOf(protoStatus.name());
+            authorizeStatusChange(caller, order, newStatus);
 
             // Guard terminal statuses
             if (order.getStatus() == kz.courier.orderservice.model.OrderStatus.DELIVERED
@@ -230,6 +249,12 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
                     UpdateOrderStatusResponse.newBuilder()
                             .setResponse(errorResponse("INVALID_ARGUMENT", e.getMessage()))
                             .build());
+        } catch (OrderServiceException e) {
+            log.warn("[gRPC] updateOrderStatus forbidden: {}", e.getMessage());
+            send(responseObserver,
+                    UpdateOrderStatusResponse.newBuilder()
+                            .setResponse(errorResponse(e.getCode(), e.getMessage()))
+                            .build());
         } catch (Exception e) {
             log.error("[gRPC] updateOrderStatus error", e);
             responseObserver.onError(Status.INTERNAL.withDescription("Internal error").asRuntimeException());
@@ -246,30 +271,49 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
     public void listOrders(ListOrdersRequest request,
                            StreamObserver<ListOrdersResponse> responseObserver) {
 
-        AuthenticatedUser caller = GrpcAuthContext.AUTHENTICATED_USER_KEY.get();
-        log.info("[gRPC] listOrders caller={}", caller.userId());
-
         try {
+            AuthenticatedUser caller = requireAuthenticatedUser();
+            log.info("[gRPC] listOrders caller={}", caller.userId());
+
             var pagination = request.getPagination();
             int page     = Math.max(1, pagination.getPage()) - 1;  // convert 1-based to 0-based
             int pageSize = pagination.getPageSize() > 0 ? pagination.getPageSize() : 20;
 
             // Sorting
-            String sortBy   = request.hasSortBy()   ? request.getSortBy()   : "createdAt";
+            String sortBy   = mapSortField(request.hasSortBy() ? request.getSortBy() : "createdAt");
             boolean sortDesc = request.hasSortDesc() ? request.getSortDesc() : true;
             Sort sort = sortDesc
                     ? Sort.by(sortBy).descending()
                     : Sort.by(sortBy).ascending();
 
-            Page<Order> result;
-
-            // Apply optional client_id filter (callers see only their own orders unless admin)
+            UUID callerId = parseUuid(caller.userId(), "caller userId");
+            UUID requestedAuthorId = null;
             if (request.hasClientId() && !request.getClientId().isBlank()) {
-                UUID authorId = UUID.fromString(request.getClientId());
-                result = orderRepository.findAllByAuthorId(authorId, PageRequest.of(page, pageSize, sort));
-            } else {
-                result = orderRepository.findAll(PageRequest.of(page, pageSize, sort));
+                requestedAuthorId = parseUuid(request.getClientId(), "client_id");
+                if (!isPrivileged(caller) && !requestedAuthorId.equals(callerId)) {
+                    throw new OrderServiceException("FORBIDDEN",
+                            "You can only list your own orders");
+                }
+            } else if (!isPrivileged(caller)) {
+                requestedAuthorId = callerId;
             }
+
+            kz.courier.orderservice.model.OrderStatus statusFilter = null;
+            if (request.hasStatus() && request.getStatus() != kz.courier.order.v1.OrderStatus.ORDER_STATUS_UNSPECIFIED) {
+                statusFilter = kz.courier.orderservice.model.OrderStatus.valueOf(request.getStatus().name());
+            }
+
+            Specification<Order> spec = Specification.where(null);
+            if (requestedAuthorId != null) {
+                UUID authorId = requestedAuthorId;
+                spec = spec.and((root, query, cb) -> cb.equal(root.get("authorId"), authorId));
+            }
+            if (statusFilter != null) {
+                kz.courier.orderservice.model.OrderStatus finalStatusFilter = statusFilter;
+                spec = spec.and((root, query, cb) -> cb.equal(root.get("status"), finalStatusFilter));
+            }
+
+            Page<Order> result = orderRepository.findAll(spec, PageRequest.of(page, pageSize, sort));
 
             var listBuilder = ListOrdersResponse.newBuilder()
                     .setResponse(successResponse())
@@ -291,6 +335,12 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
             send(responseObserver,
                     ListOrdersResponse.newBuilder()
                             .setResponse(errorResponse("INVALID_ARGUMENT", e.getMessage()))
+                            .build());
+        } catch (OrderServiceException e) {
+            log.warn("[gRPC] listOrders forbidden: {}", e.getMessage());
+            send(responseObserver,
+                    ListOrdersResponse.newBuilder()
+                            .setResponse(errorResponse(e.getCode(), e.getMessage()))
                             .build());
         } catch (Exception e) {
             log.error("[gRPC] listOrders error", e);
@@ -332,5 +382,69 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
                 .setSeconds(i.getEpochSecond())
                 .setNanos(i.getNano())
                 .build();
+    }
+
+    private AuthenticatedUser requireAuthenticatedUser() {
+        AuthenticatedUser caller = GrpcAuthContext.AUTHENTICATED_USER_KEY.get();
+        if (caller == null || caller.userId() == null || caller.userId().isBlank()) {
+            throw new OrderServiceException("UNAUTHENTICATED", "Missing authenticated user context");
+        }
+        return caller;
+    }
+
+    private void authorizeOrderRead(AuthenticatedUser caller, Order order) {
+        if (isPrivileged(caller)) {
+            return;
+        }
+
+        UUID callerId = parseUuid(caller.userId(), "caller userId");
+        if (!callerId.equals(order.getAuthorId())) {
+            throw new OrderServiceException("FORBIDDEN", "You do not have access to this order");
+        }
+    }
+
+    private void authorizeStatusChange(AuthenticatedUser caller,
+                                       Order order,
+                                       kz.courier.orderservice.model.OrderStatus newStatus) {
+        if (isPrivileged(caller)) {
+            return;
+        }
+
+        UUID callerId = parseUuid(caller.userId(), "caller userId");
+        if (!callerId.equals(order.getAuthorId())) {
+            throw new OrderServiceException("FORBIDDEN", "You do not have access to modify this order");
+        }
+        if (newStatus != kz.courier.orderservice.model.OrderStatus.CANCELLED) {
+            throw new OrderServiceException("FORBIDDEN",
+                    "Regular users may only cancel their own orders");
+        }
+    }
+
+    private boolean isPrivileged(AuthenticatedUser caller) {
+        return caller != null && caller.hasRole(PRIVILEGED_ROLES.toArray(String[]::new));
+    }
+
+    private UUID parseUuid(String rawValue, String fieldName) {
+        try {
+            return UUID.fromString(rawValue);
+        } catch (Exception e) {
+            throw new OrderServiceException("INVALID_ARGUMENT", "Invalid UUID for " + fieldName);
+        }
+    }
+
+    private String mapSortField(String rawSortBy) {
+        if (rawSortBy == null || rawSortBy.isBlank()) {
+            return "createdAt";
+        }
+
+        return switch (rawSortBy) {
+            case "createdAt", "created_at" -> "createdAt";
+            case "updatedAt", "updated_at" -> "updatedAt";
+            case "status" -> "status";
+            case "serviceType", "service_type" -> "serviceType";
+            case "authorId", "author_id" -> "authorId";
+            default -> throw new OrderServiceException("INVALID_ARGUMENT",
+                    "Unsupported sort field: " + rawSortBy);
+        };
     }
 }

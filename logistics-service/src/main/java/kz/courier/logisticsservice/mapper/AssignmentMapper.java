@@ -8,6 +8,9 @@ import kz.courier.logisticsservice.entity.CourierLocation;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Component;
 
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 
 @Component
@@ -75,8 +78,12 @@ public class AssignmentMapper {
                         .longitude(p.getLongitude())
                         .distanceMeters(p.getDistanceMeters())
                         .isOnline(p.getIsOnline())
-                        .updatedAt(p.getUpdatedAt())
+                        .updatedAt(toUtcOffsetDateTime(p.getUpdatedAt()))
                         .build())
                 .toList();
+    }
+
+    private OffsetDateTime toUtcOffsetDateTime(Instant instant) {
+        return instant == null ? null : instant.atOffset(ZoneOffset.UTC);
     }
 }

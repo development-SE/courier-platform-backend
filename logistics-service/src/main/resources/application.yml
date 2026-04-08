@@ -57,6 +57,12 @@ eureka:
     prefer-ip-address: true
     instance-id: ${spring.application.name}:${random.value}
 
+grpc:
+  client:
+    order-service:
+      address: discovery:///order-service
+      negotiationType: PLAINTEXT
+
 management:
   endpoints:
     web:

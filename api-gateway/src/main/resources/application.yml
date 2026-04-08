@@ -74,9 +74,9 @@ spring:
             - StripPrefix=3   # /api/v1/logistics/assignments/... → /assignments/...
 
         # ── Logistics Service — Courier Locations ─────────────────────────────
-        # PUT    /api/v1/logistics/couriers/{id}/location
-        # GET    /api/v1/logistics/couriers/{id}/location
-        # PATCH  /api/v1/logistics/couriers/{id}/online
+        # PUT    /api/v1/logistics/couriers/me/location
+        # GET    /api/v1/logistics/couriers/me/location
+        # PATCH  /api/v1/logistics/couriers/me/online
         # GET    /api/v1/logistics/couriers/nearby
         - id: logistics-service-couriers
           uri: lb://logistics-service
