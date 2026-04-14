@@ -97,8 +97,9 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
                     .type("email_verification")
                     .payload(Map.of(
                             "user_name", user.getFirstName(),
-                            "verify_link", apiBaseUrl + apiVerifyPath + "?token=" + token
-                    ))
+                            "verify_link", apiBaseUrl + apiVerifyPath + "?token=" + token,
+                            "email", user.getEmail()
+                        ))
                     .build();
             notificationProducer.publish(event);
 
