@@ -7,6 +7,7 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.UpdateTimestamp;
 import org.hibernate.type.SqlTypes;
 
+import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
@@ -26,6 +27,13 @@ public class Order {
      */
     @Column(name = "author_id", nullable = false)
     private UUID authorId;
+
+    /**
+     * UUID of the partner company/restaurant that should prepare the order.
+     * This is a soft reference to company-service; no cross-service FK is used.
+     */
+    @Column(name = "company_id")
+    private UUID companyId;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "service_type", nullable = false)
@@ -56,6 +64,10 @@ public class Order {
     @Column(name = "items_json", columnDefinition = "jsonb", nullable = false)
     private String itemsJson;
 
+    @Column(name = "total_amount", nullable = false, precision = 12, scale = 2)
+    @Builder.Default
+    private BigDecimal totalAmount = BigDecimal.ZERO;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     @Builder.Default
@@ -69,4 +81,3 @@ public class Order {
     @Column(name = "updated_at")
     private OffsetDateTime updatedAt;
 }
-

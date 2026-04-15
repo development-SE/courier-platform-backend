@@ -27,6 +27,7 @@ public class AuthForwardingInterceptor implements ClientInterceptor {
     private final String userId;
     private final String userRoles;
     private final String token;
+    private final String companyId;
 
     // Standard HTTP Authorization header — used so downstream services can
     // perform independent JWT validation in the future with zero changes here.
@@ -38,6 +39,9 @@ public class AuthForwardingInterceptor implements ClientInterceptor {
 
     private static final Metadata.Key<String> USER_ROLES_KEY =
             Metadata.Key.of("x-user-roles", Metadata.ASCII_STRING_MARSHALLER);
+
+    private static final Metadata.Key<String> COMPANY_ID_KEY =
+            Metadata.Key.of("x-company-id", Metadata.ASCII_STRING_MARSHALLER);
 
     @Override
     public <ReqT, RespT> ClientCall<ReqT, RespT> interceptCall(
@@ -58,9 +62,12 @@ public class AuthForwardingInterceptor implements ClientInterceptor {
                     if (token != null) {
                         headers.put(AUTHORIZATION_KEY, "Bearer " + token);
                     }
+                    if (companyId != null && !companyId.isBlank()) {
+                        headers.put(COMPANY_ID_KEY, companyId);
+                    }
 
-                    log.info("[AuthForwarding] x-user-id={} x-user-roles={} jwt={}",
-                            userId, userRoles, token != null ? "present" : "absent");
+                    log.info("[AuthForwarding] x-user-id={} x-user-roles={} x-company-id={} jwt={}",
+                            userId, userRoles, companyId, token != null ? "present" : "absent");
                 } else {
                     log.warn("[AuthForwarding] Missing auth details — proceeding unauthenticated.");
                 }

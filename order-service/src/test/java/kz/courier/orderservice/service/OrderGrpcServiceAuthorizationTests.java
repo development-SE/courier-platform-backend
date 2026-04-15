@@ -134,6 +134,39 @@ class OrderGrpcServiceAuthorizationTests {
         verify(orderRepository).findAll(any(Specification.class), any(PageRequest.class));
     }
 
+    @Test
+    void listOrdersRejectsForeignCompanyFilterForCompanyScopedUser() {
+        UUID callerId = UUID.randomUUID();
+        UUID callerCompanyId = UUID.randomUUID();
+        UUID requestedCompanyId = UUID.randomUUID();
+
+        RecordingObserver<ListOrdersResponse> observer = new RecordingObserver<>();
+        runAs(new AuthenticatedUser(callerId.toString(), List.of("DIRECTOR"), null, callerCompanyId.toString()),
+                () -> service.listOrders(ListOrdersRequest.newBuilder()
+                        .setCompanyId(requestedCompanyId.toString())
+                        .build(), observer));
+
+        assertTrue(observer.completed);
+        assertFalse(observer.value.getResponse().getSuccess());
+        assertEquals("FORBIDDEN", observer.value.getResponse().getError().getCode());
+    }
+
+    @Test
+    void listOrdersRejectsInvalidAmountRange() {
+        UUID callerId = UUID.randomUUID();
+
+        RecordingObserver<ListOrdersResponse> observer = new RecordingObserver<>();
+        runAs(new AuthenticatedUser(callerId.toString(), List.of("ADMIN"), null),
+                () -> service.listOrders(ListOrdersRequest.newBuilder()
+                        .setMinAmount(100)
+                        .setMaxAmount(10)
+                        .build(), observer));
+
+        assertTrue(observer.completed);
+        assertFalse(observer.value.getResponse().getSuccess());
+        assertEquals("INVALID_ARGUMENT", observer.value.getResponse().getError().getCode());
+    }
+
     private void runAs(AuthenticatedUser user, Runnable action) {
         Context.current()
                 .withValue(GrpcAuthContext.AUTHENTICATED_USER_KEY, user)

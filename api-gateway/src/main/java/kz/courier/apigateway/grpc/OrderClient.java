@@ -1,8 +1,10 @@
 package kz.courier.apigateway.grpc;
 
+import com.google.protobuf.Timestamp;
 import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
 import kz.courier.apigateway.dto.request.order.CreateOrderRequestDto;
+import kz.courier.apigateway.dto.request.order.OrderListFilterDto;
 import kz.courier.apigateway.dto.request.order.UpdateOrderStatusRequestDto;
 import kz.courier.apigateway.dto.response.ApiResponse;
 import kz.courier.common.v1.PaginationRequest;
@@ -14,6 +16,7 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import java.time.OffsetDateTime;
 
 /**
  * gRPC client facade for the order-service.
@@ -46,7 +49,7 @@ public class OrderClient {
      */
     private OrderServiceGrpc.OrderServiceBlockingStub authStub(AuthContext auth) {
         return orderStub.withInterceptors(
-                new AuthForwardingInterceptor(auth.userId(), auth.roles(), auth.token()));
+                new AuthForwardingInterceptor(auth.userId(), auth.roles(), auth.token(), auth.companyId()));
     }
 
     // ── Endpoints ─────────────────────────────────────────────────────────────
@@ -58,6 +61,9 @@ public class OrderClient {
             CreateOrderRequest.Builder grpcReq = CreateOrderRequest.newBuilder()
                     .setServiceType(ServiceType.valueOf(request.getServiceType()))
                     .setComment(request.getComment() != null ? request.getComment() : "");
+            if (request.getCompanyId() != null && !request.getCompanyId().isBlank()) {
+                grpcReq.setCompanyId(request.getCompanyId());
+            }
 
             if (request.getItems() != null) {
                 grpcReq.addAllItems(request.getItems().stream().map(i -> {
@@ -203,21 +209,27 @@ public class OrderClient {
     }
 
     public ApiResponse<Map<String, Object>> listOrders(
-            String clientId, String status, int page, int size,
-            String sortBy, boolean sortDesc, AuthContext auth) {
+            OrderListFilterDto filter, AuthContext auth) {
         try {
             log.info("gRPC ListOrders request");
 
             ListOrdersRequest.Builder req = ListOrdersRequest.newBuilder()
                     .setPagination(PaginationRequest.newBuilder()
-                            .setPage(page)
-                            .setPageSize(size)
-                            .setSortBy(sortBy)
-                            .setAscending(!sortDesc)
+                            .setPage(filter.getPage())
+                            .setPageSize(filter.getSize())
+                            .setSortBy(filter.getSortBy())
+                            .setAscending(!filter.isSortDesc())
                             .build());
 
-            if (clientId != null && !clientId.isEmpty()) req.setClientId(clientId);
-            if (status   != null && !status.isEmpty())   req.setStatus(OrderStatus.valueOf(status));
+            if (filter.getUserId() != null && !filter.getUserId().isBlank()) req.setUserId(filter.getUserId());
+            if (filter.getCompanyId() != null && !filter.getCompanyId().isBlank()) req.setCompanyId(filter.getCompanyId());
+            if (filter.getStatus() != null && !filter.getStatus().isBlank()) req.setStatus(OrderStatus.valueOf(filter.getStatus()));
+            if (filter.getFromDate() != null) req.setCreatedAfter(toTimestamp(filter.getFromDate()));
+            if (filter.getToDate() != null) req.setCreatedBefore(toTimestamp(filter.getToDate()));
+            if (filter.getMinAmount() != null) req.setMinAmount(filter.getMinAmount());
+            if (filter.getMaxAmount() != null) req.setMaxAmount(filter.getMaxAmount());
+            req.setSortBy(filter.getSortBy());
+            req.setSortDesc(filter.isSortDesc());
 
             ListOrdersResponse grpcResponse = authStub(auth).listOrders(req.build());
 
@@ -231,13 +243,21 @@ public class OrderClient {
             List<Map<String, String>> orders = grpcResponse.getOrdersList().stream()
                     .map(o -> Map.of(
                             "orderId", o.getOrderId(),
-                            "status",  o.getStatus().name()
+                            "status",  o.getStatus().name(),
+                            "companyId", o.hasCompanyId() ? o.getCompanyId() : "",
+                            "totalAmount", String.valueOf(o.getTotalAmount())
                     ))
                     .toList();
 
             return ApiResponse.success(Map.of(
                     "orders",     orders,
-                    "totalCount", grpcResponse.getTotalCount()
+                    "totalCount", grpcResponse.getTotalCount(),
+                    "pagination", Map.of(
+                            "currentPage", grpcResponse.getPagination().getCurrentPage(),
+                            "pageSize", grpcResponse.getPagination().getPageSize(),
+                            "totalPages", grpcResponse.getPagination().getTotalPages(),
+                            "totalItems", grpcResponse.getPagination().getTotalItems()
+                    )
             ));
 
         } catch (StatusRuntimeException e) {
@@ -246,6 +266,14 @@ public class OrderClient {
             log.error("Unexpected error listing orders", e);
             return ApiResponse.error("INTERNAL_ERROR", "An unexpected error occurred");
         }
+    }
+
+    private Timestamp toTimestamp(OffsetDateTime value) {
+        var instant = value.toInstant();
+        return Timestamp.newBuilder()
+                .setSeconds(instant.getEpochSecond())
+                .setNanos(instant.getNano())
+                .build();
     }
 
     // ── Error handling ────────────────────────────────────────────────────────

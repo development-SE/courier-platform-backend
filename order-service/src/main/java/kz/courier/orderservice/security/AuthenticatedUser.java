@@ -9,12 +9,17 @@ import java.util.List;
 public record AuthenticatedUser(
         String userId,
         List<String> roles,
-        String email        // may be null — optional field from gateway
+        String email,
+        String companyId
 ) {
+    public AuthenticatedUser(String userId, List<String> roles, String email) {
+        this(userId, roles, email, null);
+    }
+
     /** Convenience: check if the caller has at least one of the given roles. */
     public boolean hasRole(String... required) {
-        for (String r : required) {
-            if (roles.contains(r)) return true;
+        for (String role : required) {
+            if (roles.contains(role)) return true;
         }
         return false;
     }
