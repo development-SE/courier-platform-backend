@@ -22,7 +22,7 @@ spring:
     properties:
       mail:
         smtp:
-          auth: true
+          auth: true32
           starttls:
             enable: true
 
