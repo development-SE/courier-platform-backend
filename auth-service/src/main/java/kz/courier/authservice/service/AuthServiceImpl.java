@@ -1,23 +1,5 @@
 package kz.courier.authservice.service;
 
-import com.google.protobuf.Timestamp;
-import io.grpc.stub.StreamObserver;
-import io.jsonwebtoken.Claims;
-import io.grpc.Status;
-import kz.courier.authservice.dto.NotificationEvent;
-import kz.courier.authservice.model.*;
-import kz.courier.authservice.model.Role;
-import kz.courier.authservice.repository.*;
-import kz.courier.auth.v1.*;
-import kz.courier.common.v1.*;
-import kz.courier.common.v1.Error;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import net.devh.boot.grpc.server.service.GrpcService;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.transaction.annotation.Transactional;
-
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.time.Instant;
@@ -25,6 +7,46 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.Map;
 import java.util.UUID;
+
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.transaction.annotation.Transactional;
+
+import com.google.protobuf.Timestamp;
+
+import io.grpc.Status;
+import io.grpc.stub.StreamObserver;
+import io.jsonwebtoken.Claims;
+import kz.courier.auth.v1.AuthServiceGrpc;
+import kz.courier.auth.v1.ChangePasswordRequest;
+import kz.courier.auth.v1.DeleteUserRequest;
+import kz.courier.auth.v1.GetUserRequest;
+import kz.courier.auth.v1.GetUserResponse;
+import kz.courier.auth.v1.ListUsersRequest;
+import kz.courier.auth.v1.ListUsersResponse;
+import kz.courier.auth.v1.LoginRequest;
+import kz.courier.auth.v1.LoginResponse;
+import kz.courier.auth.v1.RefreshTokenRequest;
+import kz.courier.auth.v1.RefreshTokenResponse;
+import kz.courier.auth.v1.RegisterRequest;
+import kz.courier.auth.v1.RegisterResponse;
+import kz.courier.auth.v1.UpdateUserRequest;
+import kz.courier.auth.v1.VerifyEmailRequest;
+import kz.courier.authservice.dto.NotificationEvent;
+import kz.courier.authservice.model.ConfirmationToken;
+import kz.courier.authservice.model.LoginLog;
+import kz.courier.authservice.model.Role;
+import kz.courier.authservice.model.TokenType;
+import kz.courier.authservice.model.User;
+import kz.courier.authservice.repository.ConfirmationTokenRepository;
+import kz.courier.authservice.repository.LoginLogRepository;
+import kz.courier.authservice.repository.UserRepository;
+import kz.courier.common.v1.Error;
+import kz.courier.common.v1.PaginationResponse;
+import kz.courier.common.v1.Response;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import net.devh.boot.grpc.server.service.GrpcService;
 
 @Slf4j
 @GrpcService
@@ -97,7 +119,8 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
                     .type("email_verification")
                     .payload(Map.of(
                             "user_name", user.getFirstName(),
-                            "verify_link", apiBaseUrl + apiVerifyPath + "?token=" + token
+                            "verify_link", apiBaseUrl + apiVerifyPath + "?token=" + token,
+                            "email", user.getEmail()
                     ))
                     .build();
             notificationProducer.publish(event);

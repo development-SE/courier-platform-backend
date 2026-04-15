@@ -14,12 +14,14 @@ public class AuthGrpcClient {
     private AuthServiceGrpc.AuthServiceBlockingStub authStub;
 
     /**
-     * Register a new MANAGER user in auth-service.
+     * Register a user in auth-service with the specified role.
+     * Supported roles: DIRECTOR, MANAGER.
      * Returns the userId (UUID string) on success, throws on failure.
      */
-    public String registerManager(String email, String password,
-                                   String firstName, String lastName,
-                                   String phone) {
+    public String registerUser(String email, String password,
+                               String firstName, String lastName,
+                               String phone, String roleName) {
+        Role grpcRole = toGrpcRole(roleName);
         try {
             RegisterRequest request = RegisterRequest.newBuilder()
                     .setEmail(email)
@@ -28,7 +30,7 @@ public class AuthGrpcClient {
                     .setLastName(lastName)
                     .setPhone(phone != null ? phone : "")
                     .setPushConsent(false)
-                    .setRole(Role.MANAGER)
+                    .setRole(grpcRole)
                     .build();
 
             RegisterResponse response = authStub.register(request);
@@ -38,12 +40,22 @@ public class AuthGrpcClient {
                 throw new RuntimeException("Auth registration failed: " + errorMsg);
             }
 
-            log.info("Registered MANAGER in auth-service with userId: {}", response.getUserId());
+            log.info("Registered {} in auth-service with userId: {}", grpcRole, response.getUserId());
             return response.getUserId();
 
         } catch (StatusRuntimeException e) {
-            log.error("gRPC error registering manager: {}", e.getStatus());
+            log.error("gRPC error registering user: {}", e.getStatus());
             throw new RuntimeException("Auth service unavailable: " + e.getStatus().getDescription());
         }
+    }
+
+    private Role toGrpcRole(String roleName) {
+        if (roleName == null || roleName.isBlank()) return Role.MANAGER;
+        return switch (roleName.toUpperCase()) {
+            case "DIRECTOR" -> Role.DIRECTOR;
+            case "MANAGER"  -> Role.MANAGER;
+            default -> throw new IllegalArgumentException(
+                    "Unsupported employee role: " + roleName + ". Allowed: DIRECTOR, MANAGER");
+        };
     }
 }

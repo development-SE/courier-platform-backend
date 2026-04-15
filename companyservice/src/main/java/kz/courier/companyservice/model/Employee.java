@@ -32,6 +32,9 @@ public class Employee {
     @Column(name = "auth_user_id")
     private UUID authUserId;   // UUID returned from auth-service after registration
 
+    @Column(name = "role", nullable = false, length = 30)
+    private String role;       // DIRECTOR | MANAGER
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 

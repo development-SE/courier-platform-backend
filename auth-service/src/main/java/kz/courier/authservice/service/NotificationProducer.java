@@ -1,11 +1,12 @@
 package kz.courier.authservice.service;
 
 
-import kz.courier.authservice.dto.NotificationEvent;
-import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
+
+import kz.courier.authservice.dto.NotificationEvent;
+import lombok.RequiredArgsConstructor;
 
 @Component
 @RequiredArgsConstructor

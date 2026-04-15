@@ -10,6 +10,11 @@ import java.util.UUID;
 
 public class EmployeeDto {
 
+    /** Roles allowed when creating an employee via /employees. */
+    public enum EmployeeRole {
+        DIRECTOR, MANAGER
+    }
+
     @Data
     public static class CreateRequest {
         @NotBlank(message = "First name is required")
@@ -33,6 +38,9 @@ public class EmployeeDto {
             message = "Password must be 8+ chars with upper, lower, digit, special char"
         )
         private String password;  // sent to auth-service for registration
+
+        // Allowed values: DIRECTOR, MANAGER. Defaults to MANAGER when absent.
+        private String role;
     }
 
     @Data
@@ -60,7 +68,7 @@ public class EmployeeDto {
         private String phone;
         private UUID companyId;
         private UUID authUserId;
-        private String role;   // always MANAGER
+        private String role;
         private LocalDateTime createdAt;
         private LocalDateTime updatedAt;
     }

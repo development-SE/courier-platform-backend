@@ -12,7 +12,6 @@ spring:
       value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
       properties:
         spring.json.trusted.packages: "kz.courier.*"
-        spring.json.value.default.type: kz.courier.notificationservice.dto.NotificationEvent
 
   # ── Mail (SMTP) ─────────────────────────────────────────────────────────────
   mail:
@@ -23,7 +22,7 @@ spring:
     properties:
       mail:
         smtp:
-          auth: true
+          auth: true32
           starttls:
             enable: true
 
