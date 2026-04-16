@@ -45,8 +45,14 @@ public class AuthInterceptor implements ServerInterceptor {
     static final Metadata.Key<String> USER_ROLES_KEY =
             Metadata.Key.of("x-user-roles", Metadata.ASCII_STRING_MARSHALLER);
 
+    static final Metadata.Key<String> USER_ROLE_KEY =
+            Metadata.Key.of("x-user-role", Metadata.ASCII_STRING_MARSHALLER);
+
     static final Metadata.Key<String> USER_EMAIL_KEY =
             Metadata.Key.of("x-user-email", Metadata.ASCII_STRING_MARSHALLER);
+
+    static final Metadata.Key<String> COMPANY_ID_KEY =
+            Metadata.Key.of("x-company-id", Metadata.ASCII_STRING_MARSHALLER);
 
     // ── Interceptor ───────────────────────────────────────────────────────────
 
@@ -86,21 +92,25 @@ public class AuthInterceptor implements ServerInterceptor {
         // gateway before the gRPC call is made.
         String userId   = headers.get(USER_ID_KEY);
         String rolesRaw = headers.get(USER_ROLES_KEY);
+        if (isBlank(rolesRaw)) {
+            rolesRaw = headers.get(USER_ROLE_KEY);
+        }
 
         if (isBlank(userId) || isBlank(rolesRaw)) {
             log.warn("[AuthInterceptor] Missing auth metadata — userId='{}' roles='{}' method={}",
                     userId, rolesRaw, method);
             call.close(
                     Status.UNAUTHENTICATED.withDescription(
-                            "Missing authentication metadata (x-user-id, x-user-roles)"),
+                            "Missing authentication metadata (x-user-id, x-user-roles or x-user-role)"),
                     new Metadata());
             return new ServerCall.Listener<>() {};
         }
 
         List<String> roles = parseRoles(rolesRaw);
         String email = headers.get(USER_EMAIL_KEY); // optional
+        String companyId = headers.get(COMPANY_ID_KEY); // optional
 
-        AuthenticatedUser authUser = new AuthenticatedUser(userId, roles, email);
+        AuthenticatedUser authUser = new AuthenticatedUser(userId, roles, email, companyId);
         log.debug("[AuthInterceptor] Authorized userId={} roles={} method={}", userId, roles, method);
 
         Context ctx = Context.current()

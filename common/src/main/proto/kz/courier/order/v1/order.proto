@@ -90,6 +90,7 @@ message CreateOrderRequest {
   ContactInfo recipient_info          = 5;
   Address pickup_address              = 6;
   ContactInfo pickup_info             = 7;
+  optional string company_id           = 8;
 }
 
 message CreateOrderResponse {
@@ -118,6 +119,8 @@ message GetOrderResponse {
   repeated OrderItem items               = 10;
   google.protobuf.Timestamp created_at   = 11;
   google.protobuf.Timestamp updated_at   = 12;
+  optional string company_id             = 13;
+  double total_amount                    = 14;
 }
 
 message UpdateOrderStatusRequest {
@@ -145,6 +148,10 @@ message ListOrdersRequest {
   optional string courier_id         = 5;
   optional google.protobuf.Timestamp created_after  = 6;
   optional google.protobuf.Timestamp created_before = 7;
+  optional string user_id            = 10;
+  optional string company_id         = 11;
+  optional double min_amount         = 12;
+  optional double max_amount         = 13;
 
   // Sorting
   optional string sort_by            = 8;  // "created_at", "status", "total_amount" (add later)

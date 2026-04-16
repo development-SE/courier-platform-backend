@@ -122,6 +122,8 @@ public final class OrderMapper {
                 .addAllItems(items)
                 .setCreatedAt(toTimestamp(o.getCreatedAt()))
                 .setUpdatedAt(toTimestamp(o.getUpdatedAt()))
+                .setTotalAmount(o.getTotalAmount() != null ? o.getTotalAmount().doubleValue() : 0.0)
+                .setCompanyId(o.getCompanyId() != null ? o.getCompanyId().toString() : "")
                 .build();
     }
 
