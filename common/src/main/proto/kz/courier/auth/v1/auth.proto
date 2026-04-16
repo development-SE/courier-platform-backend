@@ -28,6 +28,7 @@ message RegisterRequest {
   string last_name = 5;
   bool push_consent = 6;  // Consent for push notifications
   Role role = 7;  // Defaults to CLIENT
+  optional string company_id = 8;  // Set for DIRECTOR/MANAGER accounts
 }
 
 // Registration response

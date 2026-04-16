@@ -89,6 +89,10 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
 
 
             // ---- create user ------------------------------------------------
+            UUID companyId = req.hasCompanyId() && !req.getCompanyId().isBlank()
+                    ? UUID.fromString(req.getCompanyId())
+                    : null;
+
             User user = User.builder()
                     .email(req.getEmail())
                     .passwordHash(passwordEncoder.encode(req.getPassword()))
@@ -97,6 +101,7 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
                     .lastName(req.getLastName())
                     .pushConsent(req.getPushConsent())
                     .role(Role.valueOf(req.getRole().name()))
+                    .companyId(companyId)
                     .createdAt(LocalDateTime.now())
                     .updatedAt(LocalDateTime.now())
                     .build();

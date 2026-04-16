@@ -20,12 +20,19 @@ public class AddressService {
     private final AddressRepository addressRepo;
     private final CompanyRepository companyRepo;
 
-    public AddressDto.Response create(AddressDto.CreateRequest req) {
-        if (!companyRepo.existsById(req.getCompanyId()))
+    /**
+     * Create an address.
+     *
+     * @param req             address fields (companyId may be null for DIRECTOR)
+     * @param resolvedCompanyId effective companyId resolved by the controller
+     *                          (from X-Company-Id for DIRECTOR, from body for ADMIN)
+     */
+    public AddressDto.Response create(AddressDto.CreateRequest req, UUID resolvedCompanyId) {
+        if (!companyRepo.existsById(resolvedCompanyId))
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "COMPANY_NOT_FOUND");
 
         Address address = Address.builder()
-                .companyId(req.getCompanyId())
+                .companyId(resolvedCompanyId)
                 .street(req.getStreet())
                 .house(req.getHouse())
                 .apartment(req.getApartment())
@@ -36,8 +43,10 @@ public class AddressService {
     }
 
     @Transactional(readOnly = true)
-    public AddressDto.Response getById(UUID id) {
-        return toResponse(findOrThrow(id));
+    public AddressDto.Response getById(UUID id, UUID callerCompanyId) {
+        Address address = findOrThrow(id);
+        enforceOwnership(address, callerCompanyId);
+        return toResponse(address);
     }
 
     @Transactional(readOnly = true)
@@ -56,8 +65,15 @@ public class AddressService {
                 .build();
     }
 
-    public AddressDto.Response update(UUID id, AddressDto.UpdateRequest req) {
+    /**
+     * Update an address.
+     *
+     * @param callerCompanyId non-null for DIRECTOR/MANAGER — enforces ownership check.
+     *                        Null for ADMIN/SUPER_ADMIN (no restriction).
+     */
+    public AddressDto.Response update(UUID id, AddressDto.UpdateRequest req, UUID callerCompanyId) {
         Address address = findOrThrow(id);
+        enforceOwnership(address, callerCompanyId);
 
         if (req.getStreet()    != null) address.setStreet(req.getStreet());
         if (req.getHouse()     != null) address.setHouse(req.getHouse());
@@ -67,8 +83,24 @@ public class AddressService {
         return toResponse(addressRepo.save(address));
     }
 
-    public void delete(UUID id) {
-        addressRepo.delete(findOrThrow(id));
+    /**
+     * Delete an address.
+     *
+     * @param callerCompanyId non-null for DIRECTOR/MANAGER — enforces ownership check.
+     */
+    public void delete(UUID id, UUID callerCompanyId) {
+        Address address = findOrThrow(id);
+        enforceOwnership(address, callerCompanyId);
+        addressRepo.delete(address);
+    }
+
+    // ── helpers ──────────────────────────────────────────────────────────────
+
+    /** Throws 403 if callerCompanyId is set and does not match the address's company. */
+    private void enforceOwnership(Address address, UUID callerCompanyId) {
+        if (callerCompanyId != null && !callerCompanyId.equals(address.getCompanyId()))
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "ACCESS_DENIED: Address does not belong to your company");
     }
 
     private Address findOrThrow(UUID id) {

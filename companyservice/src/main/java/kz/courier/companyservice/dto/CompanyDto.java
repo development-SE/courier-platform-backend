@@ -36,6 +36,8 @@ public class CompanyDto {
         private UUID id;
         private String name;
         private String bin;
+        private UUID directorId;    // employee.id of the DIRECTOR, null if none
+        private String director;    // "FirstName LastName" of the DIRECTOR, null if none
         private LocalDateTime createdAt;
         private LocalDateTime updatedAt;
     }

@@ -2,7 +2,9 @@ package kz.courier.companyservice.service;
 
 import kz.courier.companyservice.dto.CompanyDto;
 import kz.courier.companyservice.model.Company;
+import kz.courier.companyservice.model.Employee;
 import kz.courier.companyservice.repository.CompanyRepository;
+import kz.courier.companyservice.repository.EmployeeRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.*;
 import org.springframework.http.HttpStatus;
@@ -17,6 +19,7 @@ import java.util.UUID;
 public class CompanyService {
 
     private final CompanyRepository companyRepo;
+    private final EmployeeRepository employeeRepo;
 
     public CompanyDto.Response create(CompanyDto.CreateRequest req) {
         if (companyRepo.existsByBin(req.getBin()))
@@ -74,10 +77,19 @@ public class CompanyService {
     }
 
     private CompanyDto.Response toResponse(Company c) {
+        Employee director = employeeRepo
+                .findFirstByCompanyIdAndRole(c.getId(), "DIRECTOR")
+                .orElse(null);
+        String directorName = director == null
+                ? null
+                : (director.getFirstName() + " " + director.getLastName()).trim();
+
         return CompanyDto.Response.builder()
                 .id(c.getId())
                 .name(c.getName())
                 .bin(c.getBin())
+                .directorId(director != null ? director.getId() : null)
+                .director(directorName)
                 .createdAt(c.getCreatedAt())
                 .updatedAt(c.getUpdatedAt())
                 .build();

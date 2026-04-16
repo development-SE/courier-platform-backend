@@ -54,7 +54,8 @@ public class EmployeeService {
                 req.getFirstName(),
                 req.getLastName(),
                 req.getPhone(),
-                role
+                role,
+                companyId
         );
 
         Employee employee = Employee.builder()
@@ -78,14 +79,16 @@ public class EmployeeService {
     }
 
     @Transactional(readOnly = true)
-    public EmployeeDto.PageResponse list(int page, int size, String search,
+    public EmployeeDto.PageResponse list(int page, int size, String search, String role,
                                           UUID filterCompanyId, UUID callerCompanyId, String callerRole) {
         // DIRECTOR can only see their own company's employees
         UUID effectiveCompanyId = isDirector(callerRole) ? callerCompanyId : filterCompanyId;
+        String effectiveSearch = (search == null || search.isBlank()) ? null : search.trim();
+        String effectiveRole = (role == null || role.isBlank()) ? null : role.trim().toUpperCase();
 
         var pageable = PageRequest.of(page - 1, size, Sort.by(Sort.Direction.DESC, "createdAt"));
-        Page<Employee> result = (search != null && !search.isBlank() || effectiveCompanyId != null)
-                ? employeeRepo.search(effectiveCompanyId, search, pageable)
+        Page<Employee> result = (effectiveSearch != null || effectiveCompanyId != null || effectiveRole != null)
+                ? employeeRepo.search(effectiveCompanyId, effectiveRole, effectiveSearch, pageable)
                 : employeeRepo.findAll(pageable);
 
         return EmployeeDto.PageResponse.builder()

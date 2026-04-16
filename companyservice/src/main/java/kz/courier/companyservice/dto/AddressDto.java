@@ -12,7 +12,8 @@ public class AddressDto {
 
     @Data
     public static class CreateRequest {
-        @NotNull(message = "Company ID is required")
+        // Optional in body: DIRECTOR's companyId is resolved from X-Company-Id header.
+        // ADMIN/SUPER_ADMIN must supply it here.
         private UUID companyId;
 
         @NotBlank(message = "Street is required")

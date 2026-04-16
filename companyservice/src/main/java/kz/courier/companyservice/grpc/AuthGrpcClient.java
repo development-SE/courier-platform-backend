@@ -5,6 +5,7 @@ import kz.courier.auth.v1.*;
 import lombok.extern.slf4j.Slf4j;
 import net.devh.boot.grpc.client.inject.GrpcClient;
 import org.springframework.stereotype.Service;
+import java.util.UUID;
 
 @Slf4j
 @Service
@@ -20,20 +21,24 @@ public class AuthGrpcClient {
      */
     public String registerUser(String email, String password,
                                String firstName, String lastName,
-                               String phone, String roleName) {
+                               String phone, String roleName,
+                               UUID companyId) {
         Role grpcRole = toGrpcRole(roleName);
         try {
-            RegisterRequest request = RegisterRequest.newBuilder()
+            RegisterRequest.Builder request = RegisterRequest.newBuilder()
                     .setEmail(email)
                     .setPassword(password)
                     .setFirstName(firstName)
                     .setLastName(lastName)
                     .setPhone(phone != null ? phone : "")
                     .setPushConsent(false)
-                    .setRole(grpcRole)
-                    .build();
+                    .setRole(grpcRole);
 
-            RegisterResponse response = authStub.register(request);
+            if (companyId != null) {
+                request.setCompanyId(companyId.toString());
+            }
+
+            RegisterResponse response = authStub.register(request.build());
 
             if (!response.getResponse().getSuccess()) {
                 String errorMsg = response.getResponse().getError().getMessage();

@@ -51,13 +51,14 @@ public class EmployeeController {
             @RequestParam(defaultValue = "1")  int page,
             @RequestParam(defaultValue = "10") int size,
             @RequestParam(required = false)    String search,
+            @RequestParam(required = false)    String role,
             @RequestParam(required = false)    UUID companyId,
             @RequestHeader(value = "X-Company-Id", required = false) String companyIdHeader,
-            @RequestHeader(value = "X-User-Roles", defaultValue = "") String role) {
+            @RequestHeader(value = "X-User-Roles", defaultValue = "") String callerRole) {
 
         UUID callerCompanyId = parseCompanyId(companyIdHeader);
         return ResponseEntity.ok(
-                employeeService.list(page, size, search, companyId, callerCompanyId, role));
+                employeeService.list(page, size, search, role, companyId, callerCompanyId, callerRole));
     }
 
     @PutMapping("/{id}")
