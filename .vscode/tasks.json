@@ -1,0 +1,168 @@
+﻿{
+    "version":  "2.0.0",
+    "tasks":  [
+                  {
+                      "label":  "Run: eureka-server",
+                      "problemMatcher":  [
+
+                                         ],
+                      "command":  ".\\\\mvnw.cmd",
+                      "type":  "shell",
+                      "args":  [
+                                   "spring-boot:run"
+                               ],
+                      "presentation":  {
+                                           "label":  "eureka-server",
+                                           "reveal":  "always",
+                                           "panel":  "new",
+                                           "close":  false,
+                                           "showReuseMessage":  false
+                                       },
+                      "options":  {
+                                      "cwd":  "C:\\Users\\dilda\\Downloads\\courier-platform-backend\\eureka-server"
+                                  }
+                  },
+                  {
+                      "label":  "Run: auth-service",
+                      "problemMatcher":  [
+
+                                         ],
+                      "command":  ".\\\\mvnw.cmd",
+                      "type":  "shell",
+                      "args":  [
+                                   "spring-boot:run"
+                               ],
+                      "presentation":  {
+                                           "label":  "auth-service",
+                                           "reveal":  "always",
+                                           "panel":  "new",
+                                           "close":  false,
+                                           "showReuseMessage":  false
+                                       },
+                      "options":  {
+                                      "cwd":  "C:\\Users\\dilda\\Downloads\\courier-platform-backend\\auth-service"
+                                  }
+                  },
+                  {
+                      "label":  "Run: api-gateway",
+                      "problemMatcher":  [
+
+                                         ],
+                      "command":  ".\\\\mvnw.cmd",
+                      "type":  "shell",
+                      "args":  [
+                                   "spring-boot:run"
+                               ],
+                      "presentation":  {
+                                           "label":  "api-gateway",
+                                           "reveal":  "always",
+                                           "panel":  "new",
+                                           "close":  false,
+                                           "showReuseMessage":  false
+                                       },
+                      "options":  {
+                                      "cwd":  "C:\\Users\\dilda\\Downloads\\courier-platform-backend\\api-gateway"
+                                  }
+                  },
+                  {
+                      "label":  "Run: user-service",
+                      "problemMatcher":  [
+
+                                         ],
+                      "command":  ".\\\\mvnw.cmd",
+                      "type":  "shell",
+                      "args":  [
+                                   "spring-boot:run"
+                               ],
+                      "presentation":  {
+                                           "label":  "user-service",
+                                           "reveal":  "always",
+                                           "panel":  "new",
+                                           "close":  false,
+                                           "showReuseMessage":  false
+                                       },
+                      "options":  {
+                                      "cwd":  "C:\\Users\\dilda\\Downloads\\courier-platform-backend\\user-service"
+                                  }
+                  },
+                  {
+                      "label":  "Run: order-service",
+                      "problemMatcher":  [
+
+                                         ],
+                      "command":  ".\\\\mvnw.cmd",
+                      "type":  "shell",
+                      "args":  [
+                                   "spring-boot:run"
+                               ],
+                      "presentation":  {
+                                           "label":  "order-service",
+                                           "reveal":  "always",
+                                           "panel":  "new",
+                                           "close":  false,
+                                           "showReuseMessage":  false
+                                       },
+                      "options":  {
+                                      "cwd":  "C:\\Users\\dilda\\Downloads\\courier-platform-backend\\order-service"
+                                  }
+                  },
+                  {
+                      "label":  "Run: companyservice",
+                      "problemMatcher":  [
+
+                                         ],
+                      "command":  ".\\\\mvnw.cmd",
+                      "type":  "shell",
+                      "args":  [
+                                   "spring-boot:run"
+                               ],
+                      "presentation":  {
+                                           "label":  "companyservice",
+                                           "reveal":  "always",
+                                           "panel":  "new",
+                                           "close":  false,
+                                           "showReuseMessage":  false
+                                       },
+                      "options":  {
+                                      "cwd":  "C:\\Users\\dilda\\Downloads\\courier-platform-backend\\companyservice"
+                                  }
+                  },
+                  {
+                      "label":  "Run: notification",
+                      "problemMatcher":  [
+
+                                         ],
+                      "command":  ".\\\\mvnw.cmd",
+                      "type":  "shell",
+                      "args":  [
+                                   "spring-boot:run"
+                               ],
+                      "presentation":  {
+                                           "label":  "notification",
+                                           "reveal":  "always",
+                                           "panel":  "new",
+                                           "close":  false,
+                                           "showReuseMessage":  false
+                                       },
+                      "options":  {
+                                      "cwd":  "C:\\Users\\dilda\\Downloads\\courier-platform-backend\\notification"
+                                  }
+                  },
+                  {
+                      "label":  "Start All Services",
+                      "problemMatcher":  [
+
+                                         ],
+                      "dependsOn":  [
+                                        "Run: eureka-server",
+                                        "Run: auth-service",
+                                        "Run: api-gateway",
+                                        "Run: user-service",
+                                        "Run: order-service",
+                                        "Run: companyservice",
+                                        "Run: notification"
+                                    ],
+                      "dependsOrder":  "parallel"
+                  }
+              ]
+}

@@ -4,7 +4,7 @@ spring:
     name: order-service
 
   datasource:
-    url: jdbc:postgresql://localhost:5433/order_db
+    url: jdbc:postgresql://localhost:55433/order_db
     username: order_svc
     password: order_secret
     driver-class-name: org.postgresql.Driver
