@@ -77,3 +77,7 @@ logging:
 kafka:
   topic:
     order-events: kafka-order-events
+
+notification:
+  kafka:
+    topic: notification-kafka-topic

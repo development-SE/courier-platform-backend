@@ -25,6 +25,7 @@ enum OrderStatus {
   DELIVERED    = 8;  // Successfully handed to client
   CANCELLED    = 9;  // Cancelled by any party (client, partner, system)
   REJECTED     = 10; // Partner explicitly rejected (e.g., out of stock)
+  DELIVERY_CONFIRMATION_PENDING = 11; // Courier arrived; client OTP is required before final delivery
 }
 
 enum ServiceType {
@@ -121,6 +122,7 @@ message GetOrderResponse {
   google.protobuf.Timestamp updated_at   = 12;
   optional string company_id             = 13;
   double total_amount                    = 14;
+  optional string delivery_confirmation_code = 15; // Visible only to order owner while confirmation is pending
 }
 
 message UpdateOrderStatusRequest {
@@ -132,6 +134,48 @@ message UpdateOrderStatusRequest {
 message UpdateOrderStatusResponse {
   kz.courier.common.v1.Response response = 1;
   OrderStatus current_status             = 2;
+}
+
+message ConfirmArrivalRequest {
+  string order_id = 1;
+}
+
+message ConfirmArrivalResponse {
+  kz.courier.common.v1.Response response = 1;
+  OrderStatus current_status = 2;
+  google.protobuf.Timestamp code_expires_at = 3;
+}
+
+message VerifyDeliveryCodeRequest {
+  string order_id = 1;
+  string confirmation_code = 2;
+}
+
+message VerifyDeliveryCodeResponse {
+  kz.courier.common.v1.Response response = 1;
+  OrderStatus current_status = 2;
+}
+
+message GetDeliveryConfirmationCodeRequest {
+  string order_id = 1;
+}
+
+message GetDeliveryConfirmationCodeResponse {
+  kz.courier.common.v1.Response response = 1;
+  string confirmation_code = 2;
+  google.protobuf.Timestamp expires_at = 3;
+  int32 attempts_remaining = 4;
+}
+
+message ResendDeliveryConfirmationCodeRequest {
+  string order_id = 1;
+}
+
+message ResendDeliveryConfirmationCodeResponse {
+  kz.courier.common.v1.Response response = 1;
+  OrderStatus current_status = 2;
+  google.protobuf.Timestamp code_expires_at = 3;
+  bool regenerated = 4;
 }
 
 // ────────────────────────────────────────────────────────────────
@@ -174,4 +218,8 @@ service OrderService {
   rpc GetOrder(GetOrderRequest) returns (GetOrderResponse);
   rpc UpdateOrderStatus(UpdateOrderStatusRequest) returns (UpdateOrderStatusResponse);
   rpc ListOrders(ListOrdersRequest) returns (ListOrdersResponse);
+  rpc ConfirmArrival(ConfirmArrivalRequest) returns (ConfirmArrivalResponse);
+  rpc VerifyDeliveryCode(VerifyDeliveryCodeRequest) returns (VerifyDeliveryCodeResponse);
+  rpc GetDeliveryConfirmationCode(GetDeliveryConfirmationCodeRequest) returns (GetDeliveryConfirmationCodeResponse);
+  rpc ResendDeliveryConfirmationCode(ResendDeliveryConfirmationCodeRequest) returns (ResendDeliveryConfirmationCodeResponse);
 }

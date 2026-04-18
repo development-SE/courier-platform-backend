@@ -86,6 +86,17 @@ public class OrderController {
         return mapToResponseEntity(orderClient.updateOrderStatus(orderId, request, auth), HttpStatus.OK);
     }
 
+    /** GET /api/v1/orders/{orderId}/delivery-confirmation-code - in-app fallback for customer */
+    @GetMapping("/{orderId}/delivery-confirmation-code")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> getDeliveryConfirmationCode(
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authHeader,
+            @PathVariable String orderId) {
+
+        log.info("REST: Get Delivery Confirmation Code request for ID: {}", orderId);
+        AuthContext auth = extractAuth(authHeader);
+        return mapToResponseEntity(orderClient.getDeliveryConfirmationCode(orderId, auth), HttpStatus.OK);
+    }
+
     /** GET /api/v1/orders — list orders with optional filters */
     @GetMapping
     public ResponseEntity<ApiResponse<Map<String, Object>>> listOrders(
@@ -196,7 +207,12 @@ public class OrderController {
                 case "NOT_FOUND", "ORDER_NOT_FOUND"          -> HttpStatus.NOT_FOUND;
                 case "INVALID_ARGUMENT", "EMPTY_ITEMS",
                      "TERMINAL_STATUS", "INVALID_UUID",
-                     "INVALID_STATUS"                        -> HttpStatus.BAD_REQUEST;
+                     "INVALID_STATUS", "INVALID_STATUS_TRANSITION",
+                     "DEDICATED_FLOW_REQUIRED", "INVALID_OTP_FORMAT",
+                     "INVALID_OTP", "OTP_EXPIRED",
+                     "OTP_ATTEMPTS_EXCEEDED"                 -> HttpStatus.BAD_REQUEST;
+                case "OTP_ALREADY_ACTIVE"                    -> HttpStatus.CONFLICT;
+                case "OTP_NOT_FOUND"                         -> HttpStatus.NOT_FOUND;
                 case "PERMISSION_DENIED", "FORBIDDEN"        -> HttpStatus.FORBIDDEN;
                 case "UNAUTHENTICATED", "UNAUTHORIZED"       -> HttpStatus.UNAUTHORIZED;
                 default                                       -> HttpStatus.INTERNAL_SERVER_ERROR;

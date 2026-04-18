@@ -115,7 +115,30 @@ public class AssignmentController {
                 LogisticsDto.ApiResponse.ok(service.updateStatus(id, req)));
     }
 
+    /**
+     * Verifies customer OTP and completes the assigned courier delivery.
+     */
+    @PostMapping("/{id}/verify-delivery-code")
+    public ResponseEntity<LogisticsDto.ApiResponse<LogisticsDto.AssignmentResponse>> verifyDeliveryCode(
+            @PathVariable UUID id,
+            @Valid @RequestBody LogisticsDto.VerifyDeliveryCodeRequest req) {
+
+        return ResponseEntity.ok(
+                LogisticsDto.ApiResponse.ok(service.verifyDeliveryCode(id, req)));
+    }
+
     // ── History ───────────────────────────────────────────────────────────────
+
+    /**
+     * Resends the current delivery OTP or regenerates it after expiration.
+     */
+    @PostMapping({"/{id}/resend-delivery-code"})
+    public ResponseEntity<LogisticsDto.ApiResponse<LogisticsDto.ResendDeliveryCodeResponse>> resendDeliveryCode(
+            @PathVariable UUID id) {
+
+        return ResponseEntity.ok(
+                LogisticsDto.ApiResponse.ok(service.resendDeliveryCode(id)));
+    }
 
     @GetMapping("/{id}/history")
     public ResponseEntity<LogisticsDto.ApiResponse<List<LogisticsDto.HistoryEntry>>> history(

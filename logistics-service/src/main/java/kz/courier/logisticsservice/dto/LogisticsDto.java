@@ -39,6 +39,21 @@ public final class LogisticsDto {
             String reason              // mandatory when CANCELLED / REJECTED / FAILED
     ) {}
 
+    /** Request body for POST /assignments/{id}/verify-delivery-code */
+    public record VerifyDeliveryCodeRequest(
+            @NotNull String confirmationCode
+    ) {}
+
+    /** Response for POST /assignments/{id}/resend-delivery-code */
+    @Builder
+    public record ResendDeliveryCodeResponse(
+            UUID assignmentId,
+            UUID orderId,
+            AssignmentStatus assignmentStatus,
+            boolean regenerated,
+            OffsetDateTime expiresAt
+    ) {}
+
     /** Full assignment response */
     @Builder
     @JsonInclude(JsonInclude.Include.NON_NULL)

@@ -22,6 +22,7 @@ public enum AssignmentStatus {
     // ── Этапы выполнения ─────────────────────────────────────
     PICKED_UP("Забран у партнёра"),          // Курьер забрал заказ у ресторана/магазина
     IN_TRANSIT("В пути к клиенту"),          // Курьер едет к клиенту
+    ARRIVED("Курьер прибыл к клиенту"),      // Требуется OTP-подтверждение
 
     // ── Завершающие статусы (terminal) ───────────────────────
     DELIVERED("Доставлен клиенту"),          // Заказ успешно доставлен
@@ -69,7 +70,8 @@ public enum AssignmentStatus {
             case ASSIGNED  -> newStatus == ACCEPTED || newStatus == REJECTED || newStatus == CANCELLED;
             case ACCEPTED  -> newStatus == PICKED_UP || newStatus == CANCELLED;
             case PICKED_UP -> newStatus == IN_TRANSIT || newStatus == CANCELLED;
-            case IN_TRANSIT-> newStatus == DELIVERED || newStatus == FAILED || newStatus == CANCELLED;
+            case IN_TRANSIT-> newStatus == ARRIVED || newStatus == FAILED || newStatus == CANCELLED;
+            case ARRIVED -> newStatus == DELIVERED || newStatus == FAILED || newStatus == CANCELLED;
             case REJECTED, DELIVERED, CANCELLED, FAILED -> false;
         };
     }

@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import java.time.Instant;
 import java.time.OffsetDateTime;
 
 /**
@@ -161,12 +162,16 @@ public class OrderClient {
                 );
             }
 
-            return ApiResponse.success(Map.of(
-                    "orderId",     grpcResponse.getOrderId(),
-                    "status",      grpcResponse.getStatus().name(),
-                    "serviceType", grpcResponse.getServiceType().name(),
-                    "comment",     grpcResponse.getComment()
-            ));
+            Map<String, Object> data = new java.util.HashMap<>();
+            data.put("orderId", grpcResponse.getOrderId());
+            data.put("status", grpcResponse.getStatus().name());
+            data.put("serviceType", grpcResponse.getServiceType().name());
+            data.put("comment", grpcResponse.getComment());
+            if (grpcResponse.hasDeliveryConfirmationCode()) {
+                data.put("deliveryConfirmationCode", grpcResponse.getDeliveryConfirmationCode());
+            }
+
+            return ApiResponse.success(data);
 
         } catch (StatusRuntimeException e) {
             return handleGrpcError(e);
@@ -268,12 +273,45 @@ public class OrderClient {
         }
     }
 
+    public ApiResponse<Map<String, Object>> getDeliveryConfirmationCode(String orderId, AuthContext auth) {
+        try {
+            log.info("gRPC GetDeliveryConfirmationCode request for id: {}", orderId);
+
+            GetDeliveryConfirmationCodeResponse grpcResponse = authStub(auth).getDeliveryConfirmationCode(
+                    GetDeliveryConfirmationCodeRequest.newBuilder()
+                            .setOrderId(orderId)
+                            .build());
+
+            if (grpcResponse.hasResponse() && !grpcResponse.getResponse().getSuccess()) {
+                return ApiResponse.error(
+                        grpcResponse.getResponse().getError().getCode(),
+                        grpcResponse.getResponse().getError().getMessage()
+                );
+            }
+
+            return ApiResponse.success(Map.of(
+                    "confirmationCode", grpcResponse.getConfirmationCode(),
+                    "expiresAt", toInstant(grpcResponse.getExpiresAt()),
+                    "attemptsRemaining", grpcResponse.getAttemptsRemaining()
+            ));
+        } catch (StatusRuntimeException e) {
+            return handleGrpcError(e);
+        } catch (Exception e) {
+            log.error("Unexpected error getting delivery confirmation code", e);
+            return ApiResponse.error("INTERNAL_ERROR", "An unexpected error occurred");
+        }
+    }
+
     private Timestamp toTimestamp(OffsetDateTime value) {
         var instant = value.toInstant();
         return Timestamp.newBuilder()
                 .setSeconds(instant.getEpochSecond())
                 .setNanos(instant.getNano())
                 .build();
+    }
+
+    private Instant toInstant(Timestamp value) {
+        return Instant.ofEpochSecond(value.getSeconds(), value.getNanos());
     }
 
     // ── Error handling ────────────────────────────────────────────────────────
