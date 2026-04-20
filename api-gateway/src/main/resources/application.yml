@@ -87,6 +87,16 @@ spring:
             - name: LoggingFilter
             - StripPrefix=3   # /api/v1/logistics/couriers/... → /couriers/...
 
+        # Notification Service - device token registration and push helpers.
+        - id: notification
+          uri: lb://notification
+          predicates:
+            - Path=/api/v1/notifications/**
+          filters:
+            - name: JwtAuthenticationFilter
+            - name: LoggingFilter
+            - StripPrefix=3   # /api/v1/notifications/devices -> /devices
+
 
 
       # Default Filters (applied to all routes)

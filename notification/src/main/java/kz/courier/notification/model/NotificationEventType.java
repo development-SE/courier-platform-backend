@@ -7,7 +7,8 @@ public enum NotificationEventType {
 
     EMAIL_VERIFICATION("email_verification"),
     PASSWORD_CHANGED("password_changed"),
-    ACCOUNT_DELETED("account_deleted");
+    ACCOUNT_DELETED("account_deleted"),
+    DELIVERY_CONFIRMATION_CODE_CREATED("delivery_confirmation_code_created");
 
     private final String value;
 
