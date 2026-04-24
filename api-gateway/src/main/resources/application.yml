@@ -87,6 +87,15 @@ spring:
             - name: LoggingFilter
             - StripPrefix=3   # /api/v1/logistics/couriers/... → /couriers/...
 
+        - id: courier-service
+          uri: lb://courier-service
+          predicates:
+            - Path=/api/v1/couriers/**
+          filters:
+            - name: JwtAuthenticationFilter
+            - name: LoggingFilter
+            - StripPrefix=2
+
 
 
       # Default Filters (applied to all routes)

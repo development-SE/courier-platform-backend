@@ -19,6 +19,7 @@
         <module>order-service</module>
         <module>companyservice</module>
         <module>logistics-service</module>
+        <module>courierservice</module>
         <!-- add other modules here -->
     </modules>
 </project>

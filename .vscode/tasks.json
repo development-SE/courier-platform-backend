@@ -149,6 +149,27 @@
                                   }
                   },
                   {
+                      "label":  "Run: courierservice",
+                      "problemMatcher":  [
+
+                                         ],
+                      "command":  ".\\\\mvnw.cmd",
+                      "type":  "shell",
+                      "args":  [
+                                   "spring-boot:run"
+                               ],
+                      "presentation":  {
+                                           "label":  "courierservice",
+                                           "reveal":  "always",
+                                           "panel":  "new",
+                                           "close":  false,
+                                           "showReuseMessage":  false
+                                       },
+                      "options":  {
+                                      "cwd":  "C:\\Users\\dilda\\Downloads\\courier-platform-backend\\courierservice"
+                                  }
+                  },
+                  {
                       "label":  "Start All Services",
                       "problemMatcher":  [
 
@@ -160,7 +181,8 @@
                                         "Run: user-service",
                                         "Run: order-service",
                                         "Run: companyservice",
-                                        "Run: notification"
+                                        "Run: notification",
+                                        "Run: courierservice"
                                     ],
                       "dependsOrder":  "parallel"
                   }
