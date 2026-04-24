@@ -30,12 +30,15 @@ public class EmployeeController {
             @RequestHeader(value = "X-User-Roles", defaultValue = "") String role) {
 
         UUID resolvedCompanyId = resolveCompanyId(companyIdHeader, companyId, role);
+        if ("DIRECTOR".equals(role)) {
+            req.setRole("MANAGER");
+        }
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(employeeService.create(req, resolvedCompanyId));
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN','DIRECTOR')")
+    @PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN','DIRECTOR','MANAGER')")
     public ResponseEntity<EmployeeDto.Response> getById(
             @PathVariable UUID id,
             @RequestHeader(value = "X-Company-Id", required = false) String companyIdHeader,
@@ -46,18 +49,19 @@ public class EmployeeController {
     }
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN','DIRECTOR')")
+    @PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN','DIRECTOR','MANAGER')")
     public ResponseEntity<EmployeeDto.PageResponse> list(
             @RequestParam(defaultValue = "1")  int page,
             @RequestParam(defaultValue = "10") int size,
             @RequestParam(required = false)    String search,
+            @RequestParam(required = false)    String role,
             @RequestParam(required = false)    UUID companyId,
             @RequestHeader(value = "X-Company-Id", required = false) String companyIdHeader,
-            @RequestHeader(value = "X-User-Roles", defaultValue = "") String role) {
+            @RequestHeader(value = "X-User-Roles", defaultValue = "") String callerRole) {
 
         UUID callerCompanyId = parseCompanyId(companyIdHeader);
         return ResponseEntity.ok(
-                employeeService.list(page, size, search, companyId, callerCompanyId, role));
+                employeeService.list(page, size, search, role, companyId, callerCompanyId, callerRole));
     }
 
     @PutMapping("/{id}")
@@ -73,7 +77,7 @@ public class EmployeeController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN','DIRECTOR')")
+    @PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN','DIRECTOR')")
     public ResponseEntity<Void> delete(
             @PathVariable UUID id,
             @RequestHeader(value = "X-Company-Id", required = false) String companyIdHeader,

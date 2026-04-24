@@ -8,6 +8,7 @@ import kz.courier.common.v1.Error;
 import kz.courier.common.v1.PaginationResponse;
 import kz.courier.common.v1.Response;
 import kz.courier.order.v1.*;
+import kz.courier.orderservice.dto.OrderFilter;
 import kz.courier.orderservice.exception.OrderNotFoundException;
 import kz.courier.orderservice.exception.OrderServiceException;
 import kz.courier.orderservice.mapper.OrderMapper;
@@ -17,6 +18,7 @@ import kz.courier.orderservice.model.Order;
 import kz.courier.orderservice.repository.AddressRepository;
 import kz.courier.orderservice.repository.ContactRepository;
 import kz.courier.orderservice.repository.OrderRepository;
+import kz.courier.orderservice.repository.OrderSpecifications;
 import kz.courier.orderservice.security.AuthenticatedUser;
 import kz.courier.orderservice.security.GrpcAuthContext;
 import lombok.RequiredArgsConstructor;
@@ -25,10 +27,12 @@ import net.devh.boot.grpc.server.service.GrpcService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
-import org.springframework.data.jpa.domain.Specification;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.Set;
 import java.util.UUID;
 
@@ -50,7 +54,11 @@ import java.util.UUID;
 public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
 
     private static final Set<String> PRIVILEGED_ROLES =
-            Set.of("ADMIN", "SUPER_ADMIN", "MANAGER", "DIRECTOR");
+            Set.of("ADMIN", "SUPER_ADMIN");
+    private static final Set<String> COMPANY_SCOPED_ROLES =
+            Set.of("PARTNER", "DIRECTOR", "COMPANY_ADMIN", "MANAGER");
+    private static final int DEFAULT_PAGE_SIZE = 20;
+    private static final int MAX_PAGE_SIZE = 100;
 
     private final OrderRepository   orderRepository;
     private final AddressRepository addressRepository;
@@ -82,8 +90,12 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
             // ── Persist addresses ───────────────────────────────────────────
             Address deliveryAddr = addressRepository.save(
                     OrderMapper.toAddressEntity(request.getDeliveryAddress()));
-            Address pickupAddr = addressRepository.save(
-                    OrderMapper.toAddressEntity(request.getPickupAddress()));
+            Address pickupAddr = OrderMapper.toAddressEntity(request.getPickupAddress());
+            UUID companyId = resolveCreateCompanyId(request, caller);
+            if (companyId != null) {
+                pickupAddr.setCompanyId(companyId);
+            }
+            pickupAddr = addressRepository.save(pickupAddr);
 
             // ── Persist contacts ────────────────────────────────────────────
             Contact recipientContact = contactRepository.save(
@@ -93,10 +105,12 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
 
             // ── Serialize items to JSON ─────────────────────────────────────
             String itemsJson = OrderMapper.serializeItems(request.getItemsList(), objectMapper);
+            BigDecimal totalAmount = calculateTotalAmount(request.getItemsList());
 
             // ── Persist order ───────────────────────────────────────────────
             Order order = Order.builder()
                     .authorId(UUID.fromString(caller.userId()))
+                    .companyId(companyId)
                     .serviceType(OrderMapper.toServiceTypeEntity(request.getServiceType()))
                     .comment(request.getComment().isBlank() ? null : request.getComment())
                     .deliveryAddress(deliveryAddr)
@@ -104,6 +118,7 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
                     .pickupAddress(pickupAddr)
                     .pickupContact(pickupContact)
                     .itemsJson(itemsJson)
+                    .totalAmount(totalAmount)
                     .status(kz.courier.orderservice.model.OrderStatus.NEW)
                     .build();
 
@@ -273,11 +288,10 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
 
         try {
             AuthenticatedUser caller = requireAuthenticatedUser();
-            log.info("[gRPC] listOrders caller={}", caller.userId());
 
             var pagination = request.getPagination();
-            int page     = Math.max(1, pagination.getPage()) - 1;  // convert 1-based to 0-based
-            int pageSize = pagination.getPageSize() > 0 ? pagination.getPageSize() : 20;
+            int page = Math.max(1, pagination.getPage()) - 1;  // convert 1-based to 0-based
+            int pageSize = resolvePageSize(pagination.getPageSize());
 
             // Sorting
             String sortBy   = mapSortField(request.hasSortBy() ? request.getSortBy() : "createdAt");
@@ -286,34 +300,15 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
                     ? Sort.by(sortBy).descending()
                     : Sort.by(sortBy).ascending();
 
-            UUID callerId = parseUuid(caller.userId(), "caller userId");
-            UUID requestedAuthorId = null;
-            if (request.hasClientId() && !request.getClientId().isBlank()) {
-                requestedAuthorId = parseUuid(request.getClientId(), "client_id");
-                if (!isPrivileged(caller) && !requestedAuthorId.equals(callerId)) {
-                    throw new OrderServiceException("FORBIDDEN",
-                            "You can only list your own orders");
-                }
-            } else if (!isPrivileged(caller)) {
-                requestedAuthorId = callerId;
-            }
+            OrderFilter requestedFilter = toOrderFilter(request);
+            OrderFilter scopedFilter = applyVisibilityScope(requestedFilter, caller);
 
-            kz.courier.orderservice.model.OrderStatus statusFilter = null;
-            if (request.hasStatus() && request.getStatus() != kz.courier.order.v1.OrderStatus.ORDER_STATUS_UNSPECIFIED) {
-                statusFilter = kz.courier.orderservice.model.OrderStatus.valueOf(request.getStatus().name());
-            }
+            log.info("[gRPC] listOrders caller={} roles={} filter={} page={} size={} sort={} desc={}",
+                    caller.userId(), caller.roles(), scopedFilter, page + 1, pageSize, sortBy, sortDesc);
 
-            Specification<Order> spec = Specification.where(null);
-            if (requestedAuthorId != null) {
-                UUID authorId = requestedAuthorId;
-                spec = spec.and((root, query, cb) -> cb.equal(root.get("authorId"), authorId));
-            }
-            if (statusFilter != null) {
-                kz.courier.orderservice.model.OrderStatus finalStatusFilter = statusFilter;
-                spec = spec.and((root, query, cb) -> cb.equal(root.get("status"), finalStatusFilter));
-            }
-
-            Page<Order> result = orderRepository.findAll(spec, PageRequest.of(page, pageSize, sort));
+            Page<Order> result = orderRepository.findAll(
+                    OrderSpecifications.byFilter(scopedFilter),
+                    PageRequest.of(page, pageSize, sort));
 
             var listBuilder = ListOrdersResponse.newBuilder()
                     .setResponse(successResponse())
@@ -392,13 +387,132 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
         return caller;
     }
 
+    private OrderFilter toOrderFilter(ListOrdersRequest request) {
+        UUID userIdFromClientId = parseOptionalUuid(
+                request.hasClientId() ? request.getClientId() : null,
+                "client_id");
+        UUID userId = parseOptionalUuid(
+                request.hasUserId() ? request.getUserId() : null,
+                "user_id");
+        if (userId != null && userIdFromClientId != null && !userId.equals(userIdFromClientId)) {
+            throw new OrderServiceException("INVALID_ARGUMENT",
+                    "client_id and user_id must reference the same user when both are provided");
+        }
+        if (userId == null) {
+            userId = userIdFromClientId;
+        }
+
+        UUID companyId = parseOptionalUuid(
+                request.hasCompanyId() ? request.getCompanyId() : null,
+                "company_id");
+
+        kz.courier.orderservice.model.OrderStatus status = null;
+        if (request.hasStatus()
+                && request.getStatus() != kz.courier.order.v1.OrderStatus.ORDER_STATUS_UNSPECIFIED) {
+            status = kz.courier.orderservice.model.OrderStatus.valueOf(request.getStatus().name());
+        }
+
+        OffsetDateTime createdAfter = request.hasCreatedAfter()
+                ? toOffsetDateTime(request.getCreatedAfter(), "created_after")
+                : null;
+        OffsetDateTime createdBefore = request.hasCreatedBefore()
+                ? toOffsetDateTime(request.getCreatedBefore(), "created_before")
+                : null;
+        if (createdAfter != null && createdBefore != null && createdAfter.isAfter(createdBefore)) {
+            throw new OrderServiceException("INVALID_ARGUMENT",
+                    "fromDate must be before or equal to toDate");
+        }
+
+        BigDecimal minAmount = request.hasMinAmount()
+                ? positiveAmount(request.getMinAmount(), "minAmount")
+                : null;
+        BigDecimal maxAmount = request.hasMaxAmount()
+                ? positiveAmount(request.getMaxAmount(), "maxAmount")
+                : null;
+        if (minAmount != null && maxAmount != null && minAmount.compareTo(maxAmount) > 0) {
+            throw new OrderServiceException("INVALID_ARGUMENT",
+                    "minAmount must be less than or equal to maxAmount");
+        }
+
+        return new OrderFilter(userId, companyId, status, createdAfter, createdBefore,
+                minAmount, maxAmount);
+    }
+
+    private OrderFilter applyVisibilityScope(OrderFilter filter, AuthenticatedUser caller) {
+        if (isPrivileged(caller)) {
+            return filter;
+        }
+
+        UUID callerId = parseUuid(caller.userId(), "caller userId");
+        if (isCompanyScoped(caller)) {
+            UUID callerCompanyId = parseOptionalUuid(caller.companyId(), "caller companyId");
+            if (callerCompanyId == null) {
+                throw new OrderServiceException("FORBIDDEN",
+                        "Company-scoped users must have companyId in JWT");
+            }
+            requireSameIfPresent(filter.companyId(), callerCompanyId, "companyId");
+            return filter.withCompanyId(callerCompanyId);
+        }
+
+        requireSameIfPresent(filter.userId(), callerId, "userId");
+        return filter.withUserId(callerId);
+    }
+
+    private UUID resolveCreateCompanyId(CreateOrderRequest request, AuthenticatedUser caller) {
+        UUID requestCompanyId = parseOptionalUuid(
+                request.hasCompanyId() ? request.getCompanyId() : null,
+                "company_id");
+        UUID callerCompanyId = parseOptionalUuid(caller.companyId(), "caller companyId");
+
+        if (isCompanyScoped(caller)) {
+            if (callerCompanyId == null) {
+                throw new OrderServiceException("FORBIDDEN",
+                        "Company-scoped users must have companyId in JWT");
+            }
+            requireSameIfPresent(requestCompanyId, callerCompanyId, "companyId");
+            return callerCompanyId;
+        }
+
+        return requestCompanyId;
+    }
+
+    private BigDecimal calculateTotalAmount(java.util.List<OrderItem> items) {
+        BigDecimal total = BigDecimal.ZERO;
+        for (OrderItem item : items) {
+            if (item.getQuantity() <= 0) {
+                throw new OrderServiceException("INVALID_ARGUMENT",
+                        "Order item quantity must be greater than zero");
+            }
+            if (!item.hasPrice()) {
+                continue;
+            }
+            BigDecimal lineTotal = BigDecimal.valueOf(item.getPrice())
+                    .multiply(BigDecimal.valueOf(item.getQuantity()));
+            total = total.add(lineTotal);
+        }
+        return total;
+    }
+
+    private void requireSameIfPresent(UUID requestedId, UUID allowedId, String fieldName) {
+        if (requestedId != null && !requestedId.equals(allowedId)) {
+            throw new OrderServiceException("FORBIDDEN",
+                    "You can only access orders inside your own " + fieldName + " scope");
+        }
+    }
+
     private void authorizeOrderRead(AuthenticatedUser caller, Order order) {
         if (isPrivileged(caller)) {
             return;
         }
 
         UUID callerId = parseUuid(caller.userId(), "caller userId");
-        if (!callerId.equals(order.getAuthorId())) {
+        boolean ownUserOrder = callerId.equals(order.getAuthorId());
+        boolean ownCompanyOrder = false;
+        if (isCompanyScoped(caller) && order.getCompanyId() != null) {
+            UUID callerCompanyId = parseOptionalUuid(caller.companyId(), "caller companyId");
+            ownCompanyOrder = callerCompanyId != null && callerCompanyId.equals(order.getCompanyId());
+        }
+        if (!ownUserOrder && !ownCompanyOrder) {
             throw new OrderServiceException("FORBIDDEN", "You do not have access to this order");
         }
     }
@@ -424,12 +538,50 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
         return caller != null && caller.hasRole(PRIVILEGED_ROLES.toArray(String[]::new));
     }
 
+    private boolean isCompanyScoped(AuthenticatedUser caller) {
+        return caller != null && caller.hasRole(COMPANY_SCOPED_ROLES.toArray(String[]::new));
+    }
+
     private UUID parseUuid(String rawValue, String fieldName) {
         try {
             return UUID.fromString(rawValue);
         } catch (Exception e) {
             throw new OrderServiceException("INVALID_ARGUMENT", "Invalid UUID for " + fieldName);
         }
+    }
+
+    private UUID parseOptionalUuid(String rawValue, String fieldName) {
+        if (rawValue == null || rawValue.isBlank()) {
+            return null;
+        }
+        return parseUuid(rawValue, fieldName);
+    }
+
+    private OffsetDateTime toOffsetDateTime(Timestamp timestamp, String fieldName) {
+        try {
+            return Instant.ofEpochSecond(timestamp.getSeconds(), timestamp.getNanos())
+                    .atOffset(ZoneOffset.UTC);
+        } catch (Exception e) {
+            throw new OrderServiceException("INVALID_ARGUMENT",
+                    "Invalid timestamp for " + fieldName);
+        }
+    }
+
+    private BigDecimal positiveAmount(double rawAmount, String fieldName) {
+        if (rawAmount < 0) {
+            throw new OrderServiceException("INVALID_ARGUMENT",
+                    fieldName + " must be greater than or equal to zero");
+        }
+        return BigDecimal.valueOf(rawAmount);
+    }
+
+    private int resolvePageSize(int requestedPageSize) {
+        int pageSize = requestedPageSize > 0 ? requestedPageSize : DEFAULT_PAGE_SIZE;
+        if (pageSize > MAX_PAGE_SIZE) {
+            throw new OrderServiceException("INVALID_ARGUMENT",
+                    "page size must be less than or equal to " + MAX_PAGE_SIZE);
+        }
+        return pageSize;
     }
 
     private String mapSortField(String rawSortBy) {
@@ -442,7 +594,9 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
             case "updatedAt", "updated_at" -> "updatedAt";
             case "status" -> "status";
             case "serviceType", "service_type" -> "serviceType";
-            case "authorId", "author_id" -> "authorId";
+            case "authorId", "author_id", "userId", "user_id" -> "authorId";
+            case "companyId", "company_id" -> "companyId";
+            case "totalAmount", "total_amount", "amount" -> "totalAmount";
             default -> throw new OrderServiceException("INVALID_ARGUMENT",
                     "Unsupported sort field: " + rawSortBy);
         };

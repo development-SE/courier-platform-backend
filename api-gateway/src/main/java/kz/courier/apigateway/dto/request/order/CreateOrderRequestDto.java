@@ -14,6 +14,7 @@ import java.util.List;
 @AllArgsConstructor
 public class CreateOrderRequestDto {
     private List<OrderItemDto> items;
+    private String companyId;
     private String serviceType; // STANDARD, SCHEDULED, EXPRESS
     private String comment;
     private AddressDto deliveryAddress;

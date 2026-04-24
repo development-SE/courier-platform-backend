@@ -2,6 +2,8 @@ package kz.courier.orderservice.repository;
 
 import kz.courier.orderservice.model.Order;
 import kz.courier.orderservice.model.OrderStatus;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -15,6 +17,15 @@ import java.util.UUID;
 
 @Repository
 public interface OrderRepository extends JpaRepository<Order, UUID>, JpaSpecificationExecutor<Order> {
+
+    @Override
+    @EntityGraph(attributePaths = {
+            "deliveryAddress",
+            "recipientContact",
+            "pickupAddress",
+            "pickupContact"
+    })
+    Page<Order> findAll(Specification<Order> spec, Pageable pageable);
 
     /** Paginated fetch of all orders belonging to a specific author. */
     Page<Order> findAllByAuthorId(UUID authorId, Pageable pageable);
@@ -36,4 +47,3 @@ public interface OrderRepository extends JpaRepository<Order, UUID>, JpaSpecific
         """)
     List<Order> findActiveOrdersByAuthorId(@Param("authorId") UUID authorId);
 }
-

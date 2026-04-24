@@ -1,6 +1,25 @@
 package kz.courier.apigateway.controller;
 
+import java.time.OffsetDateTime;
+import java.util.Map;
+
+import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
+
 import kz.courier.apigateway.dto.request.order.CreateOrderRequestDto;
+import kz.courier.apigateway.dto.request.order.OrderListFilterDto;
 import kz.courier.apigateway.dto.request.order.UpdateOrderStatusRequestDto;
 import kz.courier.apigateway.dto.response.ApiResponse;
 import kz.courier.apigateway.grpc.AuthContext;
@@ -8,13 +27,6 @@ import kz.courier.apigateway.grpc.OrderClient;
 import kz.courier.apigateway.security.JwtUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-import org.springframework.web.server.ResponseStatusException;
-
-import java.util.Map;
 
 /**
  * REST facade for the order-service gRPC API.
@@ -87,17 +99,42 @@ public class OrderController {
     @GetMapping
     public ResponseEntity<ApiResponse<Map<String, Object>>> listOrders(
             @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authHeader,
+            @RequestParam(required = false)              String companyId,
+            @RequestParam(required = false)              String userId,
             @RequestParam(required = false)              String clientId,
             @RequestParam(required = false)              String status,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
+            OffsetDateTime fromDate,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
+            OffsetDateTime toDate,
+            @RequestParam(required = false)              Double minAmount,
+            @RequestParam(required = false)              Double maxAmount,
             @RequestParam(defaultValue = "1")            int    page,
             @RequestParam(defaultValue = "10")           int    size,
+            @RequestParam(required = false)              String sort,
             @RequestParam(defaultValue = "createdAt")    String sortBy,
             @RequestParam(defaultValue = "true")         boolean sortDesc) {
 
         log.info("REST: List Orders request");
         AuthContext auth = extractAuth(authHeader);
+        String[] parsedSort = parseSort(sort, sortBy, sortDesc);
+        OrderListFilterDto filter = OrderListFilterDto.builder()
+                .companyId(companyId)
+                .userId(userId != null ? userId : clientId)
+                .status(status)
+                .fromDate(fromDate)
+                .toDate(toDate)
+                .minAmount(minAmount)
+                .maxAmount(maxAmount)
+                .page(page)
+                .size(size)
+                .sortBy(parsedSort[0])
+                .sortDesc(Boolean.parseBoolean(parsedSort[1]))
+                .build();
         return mapToResponseEntity(
-                orderClient.listOrders(clientId, status, page, size, sortBy, sortDesc, auth),
+                orderClient.listOrders(filter, auth),
                 HttpStatus.OK);
     }
 
@@ -126,12 +163,26 @@ public class OrderController {
             if (roles == null) {
                 roles = claims.get("roles", String.class);
             }
+            String companyId = claims.get("companyId", String.class);
             log.debug("[OrderController] Auth extracted: userId={} roles={}", userId, roles);
-            return AuthContext.of(userId, roles != null ? roles : "", token);
+            return AuthContext.of(userId, roles != null ? roles : "", token, companyId);
         } catch (Exception e) {
             log.warn("[OrderController] Failed to extract JWT claims: {}", e.getMessage());
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid or expired token");
         }
+    }
+
+    private String[] parseSort(String sort, String fallbackSortBy, boolean fallbackSortDesc) {
+        if (sort == null || sort.isBlank()) {
+            return new String[] { fallbackSortBy, String.valueOf(fallbackSortDesc) };
+        }
+
+        String[] parts = sort.split(",", 2);
+        String field = parts[0].trim();
+        boolean desc = parts.length > 1
+                ? "desc".equalsIgnoreCase(parts[1].trim())
+                : fallbackSortDesc;
+        return new String[] { field, String.valueOf(desc) };
     }
 
     // ── Response mapping ──────────────────────────────────────────────────────

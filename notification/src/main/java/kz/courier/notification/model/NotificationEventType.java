@@ -21,6 +21,7 @@ public enum NotificationEventType {
 
     public static NotificationEventType fromValue(String value) {
         for (NotificationEventType t : values()) {
+            System.out.println("Comparing " + t.value + " with " + value);
             if (t.value.equalsIgnoreCase(value)) return t;
         }
         throw new IllegalArgumentException("Unknown notification type: " + value);

@@ -1,16 +1,21 @@
 package kz.courier.apigateway.dto.request;
 
-import jakarta.validation.constraints.*;
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.UUID;
+
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class RegisterRequest {
+public class CreateStaffUserRequest {
 
     @NotBlank(message = "Email is required")
     @Email(message = "Invalid email format")
@@ -35,5 +40,8 @@ public class RegisterRequest {
 
     private Boolean pushConsent = false;
 
-    private String role = "CLIENT";  // Public registration is always CLIENT; privileged roles are created internally.
+    @NotBlank(message = "Role is required")
+    private String role;
+
+    private UUID companyId;
 }

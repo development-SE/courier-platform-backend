@@ -28,6 +28,7 @@ message RegisterRequest {
   string last_name = 5;
   bool push_consent = 6;  // Consent for push notifications
   Role role = 7;  // Defaults to CLIENT
+  optional string company_id = 8;  // Set for DIRECTOR/MANAGER accounts
 }
 
 // Registration response
@@ -35,6 +36,21 @@ message RegisterResponse {
   kz.courier.common.v1.Response response = 1;
   string user_id = 2;  // UUID of created user
   string confirmation_token = 3;  // For email verification
+}
+
+// Super-admin-only staff creation request.
+// Supported staff role: ADMIN.
+message CreateStaffUserRequest {
+  string email = 1;
+  string password = 2;
+  optional string phone = 3;
+  string first_name = 4;
+  string last_name = 5;
+  bool push_consent = 6;
+  Role role = 7;
+  optional string company_id = 8;  // Must be empty for ADMIN
+  string actor_user_id = 9;
+  Role actor_role = 10;
 }
 
 // Login request
@@ -126,6 +142,8 @@ message ListUsersResponse {
 service AuthService {
   // User registration
   rpc Register(RegisterRequest) returns (RegisterResponse);
+  // Super admin: create a platform admin account
+  rpc CreateStaffUser(CreateStaffUserRequest) returns (RegisterResponse);
   // User login
   rpc Login(LoginRequest) returns (LoginResponse);
   // Refresh JWT token
