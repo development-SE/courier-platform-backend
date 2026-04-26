@@ -16,12 +16,12 @@ public class CorsConfig {
     public CorsWebFilter corsWebFilter() {
         CorsConfiguration config = new CorsConfiguration();
 
-        config.setAllowedOrigins(Arrays.asList(
+        config.setAllowedOriginPatterns(Arrays.asList(
                 "http://localhost:3000",
                 "http://localhost:3001",
                 "http://localhost:5173",
                 "0.0.0.0",
-                "http://10.202.19.95:*"
+                "http://192.168.1.252:*"
         ));
 
         config.setAllowedMethods(Arrays.asList(

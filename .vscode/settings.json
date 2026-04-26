@@ -1,9 +1,33 @@
 {
     "java.compile.nullAnalysis.mode": "automatic",
-    "java.configuration.updateBuildConfiguration": "interactive",
+    "java.configuration.updateBuildConfiguration": "disabled",
+    "java.autobuild.enabled": false,
+    "java.project.importOnFirstTimeStartup": "disabled",
+    "java.import.gradle.wrapper.enabled": false,
+    "gradle.autoDetect": "off",
+    "gradle.nestedProjects": false,
     "java.project.sourcePaths": ["src/main/java"],
     "java.project.outputPath": "target/classes",
     "java.project.referencedLibraries": [
         "lib/**/*.jar"
-    ]
+    ],
+    "java.import.gradle.enabled": false,
+    "java.import.exclusions": [
+        "**/node_modules/**",
+        "**/.expo/**",
+        "**/android/.gradle/**",
+        "**/android/build/**"
+    ],
+    "files.watcherExclude": {
+        "**/node_modules/**": true,
+        "**/.expo/**": true,
+        "**/android/.gradle/**": true,
+        "**/android/build/**": true
+    },
+    "search.exclude": {
+        "**/node_modules/**": true,
+        "**/.expo/**": true,
+        "**/android/.gradle/**": true,
+        "**/android/build/**": true
+    }
 }
