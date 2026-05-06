@@ -79,10 +79,6 @@ message OrderItem {
 //  optional string comment   = 6;    // per-item comment
 }
 
-// ────────────────────────────────────────────────────────────────
-// CRUD + List Requests / Responses
-// ────────────────────────────────────────────────────────────────
-
 message CreateOrderRequest {
   repeated OrderItem items            = 1;
   ServiceType service_type            = 2;

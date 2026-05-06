@@ -1,11 +1,11 @@
 spring:
   application:
-    name: notification-service
+    name: ${NOTIFICATION_SERVICE_NAME:notification-service}
 
   datasource:
-    url: jdbc:postgresql://localhost:5433/notification_db
-    username: notification_svc
-    password: notification_secret
+    url: ${NOTIFICATION_DB_URL:jdbc:postgresql://localhost:5433/notification_db}
+    username: ${NOTIFICATION_DB_USERNAME:notification_svc}
+    password: ${NOTIFICATION_DB_PASSWORD:notification_secret}
     driver-class-name: org.postgresql.Driver
 
   jpa:
@@ -25,7 +25,7 @@ spring:
 
   # ── Kafka ──────────────────────────────────────────────────────────────────
   kafka:
-    bootstrap-servers: localhost:29092        # same broker as auth-service
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:29092}
     consumer:
       group-id: notification-service
       auto-offset-reset: earliest
@@ -36,10 +36,10 @@ spring:
 
   # ── Mail (SMTP) ─────────────────────────────────────────────────────────────
   mail:
-    host: smtp.gmail.com
-    port: 587
-    username: zheka5552555@gmail.com
-    password: qxvojuqxnyfatqan
+    host: ${MAIL_HOST:smtp.gmail.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
     properties:
       mail:
         smtp:
@@ -48,19 +48,19 @@ spring:
             enable: true
 
 server:
-  port: 8082                                  # 8081 is taken by auth-service
+  port: ${NOTIFICATION_SERVICE_PORT:8082}
 
 notification:
   kafka:
-    topic: notification-kafka-topic
-    dead-letter-topic: notification-kafka-topic.DLT
+    topic: ${NOTIFICATION_KAFKA_TOPIC:notification-kafka-topic}
+    dead-letter-topic: ${NOTIFICATION_DLT_TOPIC:notification-kafka-topic.DLT}
     retry-attempts: 3
     retry-delay-ms: 1000
   mail:
-    from: "Courier <your@gmail.com>"
+    from: ${MAIL_FROM:Courier <noreply@example.com>}
 
 firebase:
-  enabled: true
+  enabled: ${FIREBASE_ENABLED:true}
   credentials-path: ${FIREBASE_CREDENTIALS_PATH:classpath:firebase/credentials.json}
 
 expo:
@@ -70,7 +70,7 @@ expo:
 eureka:
   client:
     service-url:
-      defaultZone: ${EUREKA_CLIENT_SERVICEURL_DEFAULTZONE:http://localhost:8761/eureka/}
+      defaultZone: ${EUREKA_DEFAULT_ZONE:http://localhost:8761/eureka/}
     fetch-registry: true
     register-with-eureka: true
   instance:

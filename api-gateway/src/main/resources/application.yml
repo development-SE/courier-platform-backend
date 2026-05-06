@@ -1,9 +1,9 @@
 server:
-  port: 8080
+  port: ${API_GATEWAY_PORT:8080}
 
 spring:
   application:
-    name: api-gateway
+    name: ${API_GATEWAY_SERVICE_NAME:api-gateway}
 
   # Cloud Gateway Configuration
   cloud:
@@ -38,7 +38,7 @@ spring:
       routes:
         # user-service  →  GET/POST/PUT/DELETE /api/v1/users/**
         - id: user-service
-          uri: lb://user-service   # load-balanced via Eureka
+          uri: ${USER_SERVICE_URL:lb://user-service}
           predicates:
             - Path=/api/v1/users/**
           filters:
@@ -50,7 +50,7 @@ spring:
             - StripPrefix=2   # /api/v1/users/... → /users/...
 
         - id: company-service
-          uri: http://localhost:8085
+          uri: ${COMPANY_SERVICE_URL:lb://company-service}
           predicates:
             - Path=/api/v1/companies/**,/api/v1/employees/**,/api/v1/addresses/**
           filters:
@@ -65,7 +65,7 @@ spring:
         # PATCH  /api/v1/logistics/assignments/{id}/status
         # GET    /api/v1/logistics/assignments/{id}/history
         - id: logistics-service-assignments
-          uri: lb://logistics-service
+          uri: ${LOGISTICS_SERVICE_URL:lb://logistics-service}
           predicates:
             - Path=/api/v1/logistics/assignments/**
           filters:
@@ -79,7 +79,7 @@ spring:
         # PATCH  /api/v1/logistics/couriers/me/online
         # GET    /api/v1/logistics/couriers/nearby
         - id: logistics-service-couriers
-          uri: lb://logistics-service
+          uri: ${LOGISTICS_SERVICE_URL:lb://logistics-service}
           predicates:
             - Path=/api/v1/logistics/couriers/**
           filters:
@@ -89,7 +89,7 @@ spring:
 
         # Notification Service - device token registration and push helpers.
         - id: notification
-          uri: lb://notification
+          uri: ${NOTIFICATION_SERVICE_URL:lb://notification-service}
           predicates:
             - Path=/api/v1/notifications/**
           filters:
@@ -126,31 +126,30 @@ spring:
   # Redis for Rate Limiting
   data:
     redis:
-      host: localhost
-      port: 6379
+      url: ${REDIS_URL:redis://localhost:6379}
       timeout: 2000ms
 # ── gRPC clients ───────────────────────────────────────────────────────────────
 
-  # Eureka Client Configuration
-  eureka:
-    client:
-      serviceUrl:
-        defaultZone: http://localhost:8761/eureka/
-      fetch-registry: true
-      register-with-eureka: true
-    instance:
-      prefer-ip-address: true
-      instance-id: ${spring.application.name}:${random.value}
+# Eureka Client Configuration
+eureka:
+  client:
+    serviceUrl:
+      defaultZone: ${EUREKA_DEFAULT_ZONE:http://localhost:8761/eureka/}
+    fetch-registry: true
+    register-with-eureka: true
+  instance:
+    prefer-ip-address: true
+    instance-id: ${spring.application.name}:${random.value}
 
 # gRPC Client Configuration
 grpc:
   client:
     auth-service:
-      address: discovery:///auth-service  # ← Discovers via Eureka!
+      address: ${AUTH_GRPC_ADDRESS:discovery:///auth-service}
       negotiationType: PLAINTEXT
 
     order-service:
-      address: discovery:///order-service
+      address: ${ORDER_GRPC_ADDRESS:discovery:///order-service}
       negotiationType: PLAINTEXT
 #    courier-service:
 #      address: static://localhost:9092
