@@ -47,6 +47,10 @@ public class EmployeeService {
         if (employeeRepo.existsByEmail(req.getEmail()))
             throw new ResponseStatusException(HttpStatus.CONFLICT, "EMAIL_EXISTS: Email already taken");
 
+        if (role.equals("DIRECTOR") && employeeRepo.existsByCompanyIdAndRole(companyId, "DIRECTOR"))
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "DIRECTOR_EXISTS: Company already has a director");
+
         // Register in auth-service with the requested role
         String authUserId = authGrpcClient.registerUser(
                 req.getEmail(),
@@ -81,8 +85,7 @@ public class EmployeeService {
     @Transactional(readOnly = true)
     public EmployeeDto.PageResponse list(int page, int size, String search, String role,
                                           UUID filterCompanyId, UUID callerCompanyId, String callerRole) {
-        // DIRECTOR can only see their own company's employees
-        UUID effectiveCompanyId = isDirector(callerRole) ? callerCompanyId : filterCompanyId;
+        UUID effectiveCompanyId = isCompanyScopedRole(callerRole) ? callerCompanyId : filterCompanyId;
         String effectiveSearch = (search == null || search.isBlank()) ? null : search.trim();
         String effectiveRole = (role == null || role.isBlank()) ? null : role.trim().toUpperCase();
 
@@ -120,18 +123,19 @@ public class EmployeeService {
     public void delete(UUID id, UUID callerCompanyId, String callerRole) {
         Employee employee = findOrThrow(id);
         enforceCompanyAccess(employee.getCompanyId(), callerCompanyId, callerRole);
+        authGrpcClient.deleteUser(employee.getAuthUserId());
         employeeRepo.delete(employee);
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────
 
     private void enforceCompanyAccess(UUID employeeCompanyId, UUID callerCompanyId, String callerRole) {
-        if (isDirector(callerRole) && !employeeCompanyId.equals(callerCompanyId))
+        if (isCompanyScopedRole(callerRole) && !employeeCompanyId.equals(callerCompanyId))
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "ACCESS_DENIED: Not your company");
     }
 
-    private boolean isDirector(String role) {
-        return "DIRECTOR".equals(role);
+    private boolean isCompanyScopedRole(String role) {
+        return "DIRECTOR".equals(role) || "MANAGER".equals(role);
     }
 
     private Employee findOrThrow(UUID id) {

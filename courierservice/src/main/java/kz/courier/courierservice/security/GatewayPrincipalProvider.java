@@ -1,0 +1,73 @@
+package kz.courier.courierservice.security;
+
+import kz.courier.courierservice.exception.BusinessException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.stereotype.Component;
+
+import java.util.Set;
+import java.util.UUID;
+import java.util.stream.Collectors;
+
+@Component
+public class GatewayPrincipalProvider {
+
+    public GatewayPrincipal requireCurrentPrincipal() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || authentication.getName() == null || authentication.getName().isBlank()) {
+            throw new BusinessException("UNAUTHENTICATED",
+                    "Missing trusted gateway principal in security context");
+        }
+
+        String rolesCsv = authentication.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .map(this::stripRolePrefix)
+                .collect(Collectors.joining(","));
+
+        return new GatewayPrincipal(authentication.getName(), rolesCsv);
+    }
+
+    public UUID requireCurrentUserId() {
+        try {
+            return UUID.fromString(requireCurrentPrincipal().userId());
+        } catch (IllegalArgumentException ex) {
+            throw new BusinessException("INVALID_GATEWAY_PRINCIPAL",
+                    "Authenticated user id from gateway is not a valid UUID");
+        }
+    }
+
+    public boolean hasAnyRole(String... roles) {
+        if (roles == null || roles.length == 0) {
+            return false;
+        }
+
+        Set<String> currentRoles = requireCurrentPrincipal().roles();
+        for (String role : roles) {
+            if (role != null && currentRoles.contains(role)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String stripRolePrefix(String authority) {
+        if (authority == null || authority.isBlank()) {
+            return "";
+        }
+        return authority.startsWith("ROLE_") ? authority.substring(5) : authority;
+    }
+
+    public record GatewayPrincipal(String userId, String rolesCsv) {
+
+        public Set<String> roles() {
+            if (rolesCsv == null || rolesCsv.isBlank()) {
+                return Set.of();
+            }
+            return java.util.Arrays.stream(rolesCsv.split(","))
+                    .map(String::trim)
+                    .filter(role -> !role.isBlank())
+                    .collect(Collectors.toUnmodifiableSet());
+        }
+    }
+}

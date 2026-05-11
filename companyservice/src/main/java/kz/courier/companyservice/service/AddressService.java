@@ -77,8 +77,8 @@ public class AddressService {
 
         if (req.getStreet()    != null) address.setStreet(req.getStreet());
         if (req.getHouse()     != null) address.setHouse(req.getHouse());
-        if (req.getApartment() != null) address.setApartment(req.getApartment());
-        if (req.getEntrance()  != null) address.setEntrance(req.getEntrance());
+        address.setApartment(req.getApartment());
+        address.setEntrance(req.getEntrance());
 
         return toResponse(addressRepo.save(address));
     }

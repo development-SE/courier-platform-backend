@@ -54,6 +54,33 @@ public class AuthGrpcClient {
         }
     }
 
+    /**
+     * Delete the paired auth-service user for an employee account.
+     */
+    public void deleteUser(UUID authUserId) {
+        if (authUserId == null) {
+            return;
+        }
+
+        try {
+            var response = authStub.deleteUser(DeleteUserRequest.newBuilder()
+                    .setUserId(authUserId.toString())
+                    .build());
+
+            if (!response.getSuccess()) {
+                String errorMsg = response.hasError()
+                        ? response.getError().getMessage()
+                        : "Unknown auth delete error";
+                throw new RuntimeException("Auth deletion failed: " + errorMsg);
+            }
+
+            log.info("Deleted auth-service user: {}", authUserId);
+        } catch (StatusRuntimeException e) {
+            log.error("gRPC error deleting auth user {}: {}", authUserId, e.getStatus());
+            throw new RuntimeException("Auth service unavailable: " + e.getStatus().getDescription());
+        }
+    }
+
     private Role toGrpcRole(String roleName) {
         if (roleName == null || roleName.isBlank()) return Role.MANAGER;
         return switch (roleName.toUpperCase()) {

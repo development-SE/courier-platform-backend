@@ -35,6 +35,5 @@ public class RegisterRequest {
 
     private Boolean pushConsent = false;
 
-    @NotNull(message = "Role is required")
-    private String role = "CLIENT";  // CLIENT, COURIER, PARTNER, ADMIN
+    private String role = "CLIENT";  // Public registration is always CLIENT; privileged roles are created internally.
 }

@@ -12,7 +12,8 @@ $services = @(
     @{ name = "user-service";   dir = "user-service"   },
     @{ name = "order-service";  dir = "order-service"  },
     @{ name = "companyservice"; dir = "companyservice" },
-    @{ name = "notification";   dir = "notification"   }
+    @{ name = "notification";   dir = "notification"   },
+    @{ name = "courierservice";   dir = "courierservice"   }
 )
 
 $tasks = [System.Collections.Generic.List[object]]::new()

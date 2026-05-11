@@ -55,16 +55,17 @@ public class JwtAuthenticationFilter extends AbstractGatewayFilterFactory<JwtAut
                 String username = claims.get("username", String.class);
                 String role = claims.get("role", String.class);
                 String companyId = claims.get("companyId", String.class);
+                String forwardedUsername = username != null ? username : userId;
 
                 // Add user info to headers for downstream services
                 ServerHttpRequest modifiedRequest = exchange.getRequest().mutate()
                         .header("X-User-Id", userId)
-                        .header("X-Username", username)
+                        .header("X-Username", forwardedUsername)
                         .header("X-User-Roles", role)
                         .header("X-Company-Id", companyId != null ? companyId : "") 
                         .build();
 
-                log.debug("JWT validated successfully for user: {}", username);
+                log.debug("JWT validated successfully for user: {}", forwardedUsername);
 
                 return chain.filter(exchange.mutate().request(modifiedRequest).build());
 

@@ -23,9 +23,10 @@ public class JwtService {
         this.refreshExpMs = refreshMin * 60 * 1000;
     }
 
-    public String generateAccessToken(UUID userId, String role,  UUID companyId) {
+    public String generateAccessToken(UUID userId, String username, String role, UUID companyId) {
         var builder = Jwts.builder()
                 .setSubject(userId.toString())
+                .claim("username", username)
                 .claim("role", role)
                 .setIssuedAt(new Date())
                 .setExpiration(new Date(System.currentTimeMillis() + accessExpMs))

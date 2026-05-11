@@ -30,12 +30,15 @@ public class EmployeeController {
             @RequestHeader(value = "X-User-Roles", defaultValue = "") String role) {
 
         UUID resolvedCompanyId = resolveCompanyId(companyIdHeader, companyId, role);
+        if ("DIRECTOR".equals(role)) {
+            req.setRole("MANAGER");
+        }
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(employeeService.create(req, resolvedCompanyId));
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN','DIRECTOR')")
+    @PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN','DIRECTOR','MANAGER')")
     public ResponseEntity<EmployeeDto.Response> getById(
             @PathVariable UUID id,
             @RequestHeader(value = "X-Company-Id", required = false) String companyIdHeader,
@@ -46,7 +49,7 @@ public class EmployeeController {
     }
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN','DIRECTOR')")
+    @PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN','DIRECTOR','MANAGER')")
     public ResponseEntity<EmployeeDto.PageResponse> list(
             @RequestParam(defaultValue = "1")  int page,
             @RequestParam(defaultValue = "10") int size,
@@ -74,7 +77,7 @@ public class EmployeeController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN','DIRECTOR')")
+    @PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN','DIRECTOR')")
     public ResponseEntity<Void> delete(
             @PathVariable UUID id,
             @RequestHeader(value = "X-Company-Id", required = false) String companyIdHeader,

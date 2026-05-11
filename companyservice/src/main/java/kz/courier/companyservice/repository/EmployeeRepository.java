@@ -12,6 +12,7 @@ import java.util.UUID;
 public interface EmployeeRepository extends JpaRepository<Employee, UUID> {
     boolean existsByEmail(String email);
     boolean existsByEmailAndIdNot(String email, UUID id);
+    boolean existsByCompanyIdAndRole(UUID companyId, String role);
     Page<Employee> findByCompanyId(UUID companyId, Pageable pageable);
     Optional<Employee> findFirstByCompanyIdAndRole(UUID companyId, String role);
 

@@ -1,32 +1,9 @@
 {
-    "version":  "2.0.0",
-    "tasks":  [
-        {
-            "label": "Update mobile IP",
-            "problemMatcher": [],
-            "command": "powershell.exe",
-            "type": "shell",
-            "args": [
-                "-ExecutionPolicy",
-                "Bypass",
-                "-File",
-                "${workspaceFolder}\\scripts\\update-mobile-ip.ps1"
-            ],
-            "presentation": {
-                "label": "update-mobile-ip",
-                "reveal": "always",
-                "panel": "shared",
-                "close": false,
-                "showReuseMessage": false
-            },
-            "options": {
-                "cwd": "${workspaceFolder}"
-            }
-        },
+    "version": "2.0.0",
+    "tasks": [
         {
             "label": "Run: eureka-server",
-            "problemMatcher": [],
-            "command": ".\\\\mvnw.cmd",
+            "command": ".\\mvnw.cmd",
             "type": "shell",
             "args": [
                 "spring-boot:run"
@@ -39,13 +16,12 @@
                 "showReuseMessage": false
             },
             "options": {
-                "cwd": "D:\\DiplomaWork\\courier-platform-backend\\eureka-server"
+                "cwd": "${workspaceFolder}\\eureka-server"
             }
         },
         {
             "label": "Run: auth-service",
-            "problemMatcher": [],
-            "command": ".\\\\mvnw.cmd",
+            "command": ".\\mvnw.cmd",
             "type": "shell",
             "args": [
                 "spring-boot:run"
@@ -58,13 +34,12 @@
                 "showReuseMessage": false
             },
             "options": {
-                "cwd": "D:\\DiplomaWork\\courier-platform-backend\\auth-service"
+                "cwd": "${workspaceFolder}\\auth-service"
             }
         },
         {
             "label": "Run: api-gateway",
-            "problemMatcher": [],
-            "command": ".\\\\mvnw.cmd",
+            "command": ".\\mvnw.cmd",
             "type": "shell",
             "args": [
                 "spring-boot:run"
@@ -77,13 +52,12 @@
                 "showReuseMessage": false
             },
             "options": {
-                "cwd": "D:\\DiplomaWork\\courier-platform-backend\\api-gateway"
+                "cwd": "${workspaceFolder}\\api-gateway"
             }
         },
         {
             "label": "Run: user-service",
-            "problemMatcher": [],
-            "command": ".\\\\mvnw.cmd",
+            "command": ".\\mvnw.cmd",
             "type": "shell",
             "args": [
                 "spring-boot:run"
@@ -96,13 +70,12 @@
                 "showReuseMessage": false
             },
             "options": {
-                "cwd": "D:\\DiplomaWork\\courier-platform-backend\\user-service"
+                "cwd": "${workspaceFolder}\\user-service"
             }
         },
         {
             "label": "Run: order-service",
-            "problemMatcher": [],
-            "command": ".\\\\mvnw.cmd",
+            "command": ".\\mvnw.cmd",
             "type": "shell",
             "args": [
                 "spring-boot:run"
@@ -115,13 +88,12 @@
                 "showReuseMessage": false
             },
             "options": {
-                "cwd": "D:\\DiplomaWork\\courier-platform-backend\\order-service"
+                "cwd": "${workspaceFolder}\\order-service"
             }
         },
         {
             "label": "Run: companyservice",
-            "problemMatcher": [],
-            "command": ".\\\\mvnw.cmd",
+            "command": ".\\mvnw.cmd",
             "type": "shell",
             "args": [
                 "spring-boot:run"
@@ -134,13 +106,12 @@
                 "showReuseMessage": false
             },
             "options": {
-                "cwd": "D:\\DiplomaWork\\courier-platform-backend\\companyservice"
+                "cwd": "${workspaceFolder}\\companyservice"
             }
         },
         {
             "label": "Run: notification",
-            "problemMatcher": [],
-            "command": ".\\\\mvnw.cmd",
+            "command": ".\\mvnw.cmd",
             "type": "shell",
             "args": [
                 "spring-boot:run"
@@ -153,12 +124,11 @@
                 "showReuseMessage": false
             },
             "options": {
-                "cwd": "D:\\DiplomaWork\\courier-platform-backend\\notification"
+                "cwd": "${workspaceFolder}\\notification"
             }
         },
         {
-            "label": "Start Backend Services",
-            "problemMatcher": [],
+            "label": "Start All Services",
             "dependsOn": [
                 "Run: eureka-server",
                 "Run: auth-service",
@@ -169,15 +139,6 @@
                 "Run: notification"
             ],
             "dependsOrder": "parallel"
-        },
-        {
-            "label": "Start All Services",
-            "problemMatcher": [],
-            "dependsOn": [
-                "Update mobile IP",
-                "Start Backend Services"
-            ],
-            "dependsOrder": "sequence"
         }
     ]
 }

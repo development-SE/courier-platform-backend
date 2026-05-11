@@ -19,6 +19,7 @@ import io.grpc.stub.StreamObserver;
 import io.jsonwebtoken.Claims;
 import kz.courier.auth.v1.AuthServiceGrpc;
 import kz.courier.auth.v1.ChangePasswordRequest;
+import kz.courier.auth.v1.CreateStaffUserRequest;
 import kz.courier.auth.v1.DeleteUserRequest;
 import kz.courier.auth.v1.GetUserRequest;
 import kz.courier.auth.v1.GetUserResponse;
@@ -76,7 +77,8 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
                 return;
             }
 
-            if (userRepo.existsByPhone(req.getPhone())) {
+            String phone = req.hasPhone() && !req.getPhone().isBlank() ? req.getPhone().trim() : null;
+            if (phone != null && userRepo.existsByPhone(phone)) {
                 sendError(responseObserver, "PHONE_EXISTS", "Phone already taken");
                 return;
             }
@@ -92,15 +94,16 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
             UUID companyId = req.hasCompanyId() && !req.getCompanyId().isBlank()
                     ? UUID.fromString(req.getCompanyId())
                     : null;
+            Role role = resolveRegistrationRole(req, companyId);
 
             User user = User.builder()
                     .email(req.getEmail())
                     .passwordHash(passwordEncoder.encode(req.getPassword()))
-                    .phone(req.hasPhone() ? req.getPhone() : null)
+                    .phone(phone)
                     .firstName(req.getFirstName())
                     .lastName(req.getLastName())
                     .pushConsent(req.getPushConsent())
-                    .role(Role.valueOf(req.getRole().name()))
+                    .role(role)
                     .companyId(companyId)
                     .createdAt(LocalDateTime.now())
                     .updatedAt(LocalDateTime.now())
@@ -128,7 +131,12 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
                             "email", user.getEmail()
                     ))
                     .build();
-            notificationProducer.publish(event);
+            try {
+                notificationProducer.publish(event);
+            } catch (Exception notificationError) {
+                log.warn("Registration succeeded but notification publish failed for userId={}: {}",
+                        user.getId(), notificationError.getMessage());
+            }
 
             // ---- success response -------------------------------------------
             RegisterResponse reply = RegisterResponse.newBuilder()
@@ -147,35 +155,124 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
     }
 
     @Override
+    public void createStaffUser(CreateStaffUserRequest req, StreamObserver<RegisterResponse> responseObserver) {
+        try {
+            Role actorRole = Role.valueOf(req.getActorRole().name());
+            Role targetRole = Role.valueOf(req.getRole().name());
+            validateStaffCreation(actorRole, targetRole);
+
+            validateEmail(req.getEmail());
+
+            if (userRepo.existsByEmail(req.getEmail())) {
+                sendError(responseObserver, "EMAIL_EXISTS", "E-mail already taken");
+                return;
+            }
+
+            if (req.hasPhone() && !req.getPhone().isBlank() && userRepo.existsByPhone(req.getPhone())) {
+                sendError(responseObserver, "PHONE_EXISTS", "Phone already taken");
+                return;
+            }
+
+            validatePassword(req.getPassword());
+            validateNames(req.getFirstName(), req.getLastName());
+
+            UUID companyId = req.hasCompanyId() && !req.getCompanyId().isBlank()
+                    ? UUID.fromString(req.getCompanyId())
+                    : null;
+            validateStaffCompanyScope(targetRole, companyId);
+
+            User user = User.builder()
+                    .email(req.getEmail())
+                    .passwordHash(passwordEncoder.encode(req.getPassword()))
+                    .phone(req.hasPhone() && !req.getPhone().isBlank() ? req.getPhone() : null)
+                    .firstName(req.getFirstName())
+                    .lastName(req.getLastName())
+                    .pushConsent(req.getPushConsent())
+                    .role(targetRole)
+                    .companyId(companyId)
+                    .createdAt(LocalDateTime.now())
+                    .updatedAt(LocalDateTime.now())
+                    .build();
+
+            user = userRepo.save(user);
+
+            String token = UUID.randomUUID().toString();
+            ConfirmationToken ct = ConfirmationToken.builder()
+                    .user(user)
+                    .token(token)
+                    .type(TokenType.EMAIL_VERIFY)
+                    .expiresAt(LocalDateTime.now().plusHours(24))
+                    .build();
+            tokenRepo.save(ct);
+
+            NotificationEvent event = NotificationEvent.builder()
+                    .userId(user.getId().toString())
+                    .type("email_verification")
+                    .payload(Map.of(
+                            "user_name", user.getFirstName(),
+                            "verify_link", apiBaseUrl + apiVerifyPath + "?token=" + token,
+                            "email", user.getEmail()
+                    ))
+                    .build();
+            try {
+                notificationProducer.publish(event);
+            } catch (Exception notificationError) {
+                log.warn("Staff user created but notification publish failed for userId={}: {}",
+                        user.getId(), notificationError.getMessage());
+            }
+
+            RegisterResponse reply = RegisterResponse.newBuilder()
+                    .setResponse(successResponse())
+                    .setUserId(user.getId().toString())
+                    .setConfirmationToken(token)
+                    .build();
+
+            responseObserver.onNext(reply);
+            responseObserver.onCompleted();
+        } catch (IllegalArgumentException e) {
+            sendError(responseObserver, "INVALID_STAFF_USER", e.getMessage());
+        } catch (Exception e) {
+            log.error("Unexpected error during staff user creation", e);
+            sendError(responseObserver, "INTERNAL_ERROR", "Staff user creation failed: " + e.getMessage());
+        }
+    }
+
+    @Override
     public void login(LoginRequest req, StreamObserver<LoginResponse> responseObserver) {
         userRepo.findByEmail(req.getEmail()).ifPresentOrElse(user -> {
 
             if (!user.isEmailVerified()){
-                sendError(responseObserver, "EMAIL_NOT_VERIFIED", "E-mail not verified");
+                sendLoginError(responseObserver, "EMAIL_NOT_VERIFIED", "E-mail not verified");
                 return;
             }
 
             // Account status check first (security best practice)
             if (!user.isActive()) {
-                sendError(responseObserver, "ACCOUNT_INACTIVE", "Account is disabled or not activated.");
+                sendLoginError(responseObserver, "ACCOUNT_INACTIVE", "Account is disabled or not activated.");
                 return;
             }
 
             // Password verification
             if (!passwordEncoder.matches(req.getPassword(), user.getPasswordHash())) {
-                sendError(responseObserver, "INVALID_CREDENTIALS", "Invalid password.");
+                sendLoginError(responseObserver, "INVALID_CREDENTIALS", "Invalid password.");
                 return;
             }
 
             String access = jwtService.generateAccessToken(
                 user.getId(),
+                user.getEmail(),
                 user.getRole().name(),
                 user.getCompanyId()  // ← need to add this field to User entity
             );
             String refresh = jwtService.generateRefreshToken(user.getId());
 
             // Success path
-            logLogin(user, req.getDeviceId(), true);
+            try {
+                logLogin(user, req.getDeviceId(), true);
+            } catch (Exception loginLogError) {
+                log.warn("Login succeeded but audit log save failed for userId={}: {}",
+                        user.getId(), loginLogError.getMessage());
+            }
 
             LoginResponse reply = LoginResponse.newBuilder()
                     .setResponse(successResponse())
@@ -190,7 +287,7 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
             responseObserver.onNext(reply);
             responseObserver.onCompleted();
 
-        }, () -> sendError(responseObserver, "USER_NOT_FOUND", "No account found with this email."));
+        }, () -> sendLoginError(responseObserver, "USER_NOT_FOUND", "No account found with this email."));
     }
 
     /* ====================== REFRESH TOKEN ====================== */
@@ -204,6 +301,7 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
 
             String access = jwtService.generateAccessToken(
                 user.getId(),
+                user.getEmail(),
                 user.getRole().name(),
                 user.getCompanyId()  // ← need to add this field to User entity
             );
@@ -222,7 +320,7 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
             responseObserver.onCompleted();
         } catch (Exception ex) {
             log.warn("Refresh token failed: {}", ex.getMessage());
-            sendError(responseObserver, "INVALID_REFRESH", "Refresh token invalid or expired");
+            sendRefreshError(responseObserver, "INVALID_REFRESH", "Refresh token invalid or expired");
         }
     }
 
@@ -230,7 +328,7 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
     public void verifyEmail(VerifyEmailRequest req, StreamObserver<Response> responseObserver) {
         tokenRepo.findByTokenAndUsedFalse(req.getToken()).ifPresentOrElse(t -> {
             if (t.getExpiresAt().isBefore(LocalDateTime.now())) {
-                sendError(responseObserver, "TOKEN_EXPIRED", "Verification token expired");
+                sendResponseError(responseObserver, "TOKEN_EXPIRED", "Verification token expired");
                 return;
             }
 
@@ -243,7 +341,7 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
 
             responseObserver.onNext(successResponse());
             responseObserver.onCompleted();
-        }, () -> sendError(responseObserver, "TOKEN_INVALID", "Invalid or already used token"));
+        }, () -> sendResponseError(responseObserver, "TOKEN_INVALID", "Invalid or already used token"));
     }
 
     /* ====================== GET USER ====================== */
@@ -358,15 +456,20 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
             logRepo.deleteAllByUser(user);
             userRepo.delete(user);
 
-            notificationProducer.publish(NotificationEvent.builder()
-                    .userId(userId.toString())
-                    .type("account_deleted")
-                    .payload(Map.of(
-                            "user_name",  firstName,
-                            "email",      email,
-                            "deleted_at", deletedAt
-                    ))
-                    .build());
+            try {
+                notificationProducer.publish(NotificationEvent.builder()
+                        .userId(userId.toString())
+                        .type("account_deleted")
+                        .payload(Map.of(
+                                "user_name",  firstName,
+                                "email",      email,
+                                "deleted_at", deletedAt
+                        ))
+                        .build());
+            } catch (Exception notificationError) {
+                log.warn("Auth user deleted but notification publish failed for userId={}: {}",
+                        userId, notificationError.getMessage());
+            }
 
             resp.onNext(successResponse());
             resp.onCompleted();
@@ -433,6 +536,25 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
         }
     }
 
+    private void sendLoginError(StreamObserver<LoginResponse> observer, String code, String message) {
+        observer.onNext(LoginResponse.newBuilder()
+                .setResponse(errorResponse(code, message))
+                .build());
+        observer.onCompleted();
+    }
+
+    private void sendRefreshError(StreamObserver<RefreshTokenResponse> observer, String code, String message) {
+        observer.onNext(RefreshTokenResponse.newBuilder()
+                .setResponse(errorResponse(code, message))
+                .build());
+        observer.onCompleted();
+    }
+
+    private void sendResponseError(StreamObserver<Response> observer, String code, String message) {
+        observer.onNext(errorResponse(code, message));
+        observer.onCompleted();
+    }
+
     private Response successResponse() {
         return Response.newBuilder()
                 .setSuccess(true)
@@ -497,5 +619,34 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
                 !first.matches("^[a-zA-Zа-яА-Я\\s-]{2,100}$") ||
                 !last.matches("^[a-zA-Zа-яА-Я\\s-]{2,100}$"))
             throw new IllegalArgumentException("Names must be 2-100 letters");
+    }
+
+    private Role resolveRegistrationRole(RegisterRequest req, UUID companyId) {
+        if (companyId == null) {
+            return Role.CLIENT;
+        }
+
+        Role requestedRole = Role.valueOf(req.getRole().name());
+        if (requestedRole == Role.DIRECTOR || requestedRole == Role.MANAGER) {
+            return requestedRole;
+        }
+
+        throw new IllegalArgumentException("Company-scoped registration only supports DIRECTOR or MANAGER");
+    }
+
+    private void validateStaffCreation(Role actorRole, Role targetRole) {
+        if (actorRole != Role.SUPER_ADMIN) {
+            throw new IllegalArgumentException("Only SUPER_ADMIN can create staff users");
+        }
+
+        if (targetRole != Role.ADMIN) {
+            throw new IllegalArgumentException("Staff role must be ADMIN");
+        }
+    }
+
+    private void validateStaffCompanyScope(Role targetRole, UUID companyId) {
+        if (companyId != null) {
+            throw new IllegalArgumentException("companyId must be empty for ADMIN");
+        }
     }
 }

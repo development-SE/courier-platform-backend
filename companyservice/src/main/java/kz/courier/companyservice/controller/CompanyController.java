@@ -23,18 +23,25 @@ public class CompanyController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN','DIRECTOR')")
-    public ResponseEntity<CompanyDto.Response> getById(@PathVariable UUID id) {
-        return ResponseEntity.ok(companyService.getById(id));
+    @PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN','DIRECTOR','MANAGER')")
+    public ResponseEntity<CompanyDto.Response> getById(
+            @PathVariable UUID id,
+            @RequestHeader(value = "X-Company-Id", required = false) String companyIdHeader,
+            @RequestHeader(value = "X-User-Roles", defaultValue = "") String role) {
+
+        return ResponseEntity.ok(companyService.getById(id, parseCompanyId(companyIdHeader), role));
     }
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN','DIRECTOR')")
+    @PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN','DIRECTOR','MANAGER')")
     public ResponseEntity<CompanyDto.PageResponse> list(
             @RequestParam(defaultValue = "1")  int page,
             @RequestParam(defaultValue = "10") int size,
-            @RequestParam(required = false)    String search) {
-        return ResponseEntity.ok(companyService.list(page, size, search));
+            @RequestParam(required = false)    String search,
+            @RequestHeader(value = "X-Company-Id", required = false) String companyIdHeader,
+            @RequestHeader(value = "X-User-Roles", defaultValue = "") String role) {
+
+        return ResponseEntity.ok(companyService.list(page, size, search, parseCompanyId(companyIdHeader), role));
     }
 
     @PutMapping("/{id}")
@@ -50,5 +57,10 @@ public class CompanyController {
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         companyService.delete(id);
         return ResponseEntity.noContent().build();
+    }
+
+    private UUID parseCompanyId(String header) {
+        if (header == null || header.isBlank()) return null;
+        try { return UUID.fromString(header); } catch (Exception e) { return null; }
     }
 }

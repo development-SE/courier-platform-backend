@@ -1,11 +1,13 @@
 package kz.courier.apigateway.controller;
 
 import jakarta.validation.Valid;
+import kz.courier.apigateway.dto.request.CreateStaffUserRequest;
 import kz.courier.apigateway.dto.request.LoginRequest;
 import kz.courier.apigateway.dto.request.RefreshTokenRequest;
 import kz.courier.apigateway.dto.request.RegisterRequest;
 import kz.courier.apigateway.dto.response.*;
 import kz.courier.apigateway.grpc.AuthClient;
+import kz.courier.apigateway.security.JwtUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -21,6 +23,7 @@ import java.util.List;
 public class AuthController {
 
     private final AuthClient authGrpcClient;
+    private final JwtUtil jwtUtil;
 
     /**
      * POST /api/v1/auth/register
@@ -33,6 +36,28 @@ public class AuthController {
         log.info("REST: Register request for email: {}", request.getEmail());
 
         ApiResponse<RegisterResponse> response = authGrpcClient.register(request);
+
+        HttpStatus status = response.isSuccess() ? HttpStatus.CREATED : HttpStatus.BAD_REQUEST;
+        return ResponseEntity.status(status).body(response);
+    }
+
+    /**
+     * POST /api/v1/auth/staff
+     * Super-admin-only platform staff creation for ADMIN accounts.
+     */
+    @PostMapping("/staff")
+    public ResponseEntity<ApiResponse<RegisterResponse>> createStaffUser(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @Valid @RequestBody CreateStaffUserRequest request) {
+
+        AuthActor actor = requireSuperAdminActor(authorization);
+        if (actor == null) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(ApiResponse.error("FORBIDDEN", "Only SUPER_ADMIN can create admin users"));
+        }
+
+        ApiResponse<RegisterResponse> response =
+                authGrpcClient.createStaffUser(request, actor.userId(), actor.role());
 
         HttpStatus status = response.isSuccess() ? HttpStatus.CREATED : HttpStatus.BAD_REQUEST;
         return ResponseEntity.status(status).body(response);
@@ -88,18 +113,77 @@ public class AuthController {
 
     /**
      * GET /api/v1/auth/users?page=1&size=10
-     * List all users (Admin only)
+     * List auth users (SuperAdmin only)
      */
     @GetMapping("/users")
     public ResponseEntity<ApiResponse<List<UserResponse>>> listUsers(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
             @RequestParam(defaultValue = "1") int page,
-            @RequestParam(defaultValue = "10") int size) {
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(defaultValue = "ADMIN") String role) {
 
-        log.info("REST: List users request - page: {}, size: {}", page, size);
+        AuthActor actor = requireSuperAdminActor(authorization);
+        if (actor == null) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(ApiResponse.error("FORBIDDEN", "Only SUPER_ADMIN can view admin users"));
+        }
 
-        ApiResponse<List<UserResponse>> response = authGrpcClient.listUsers(page, size);
+        String filterRole = role == null || role.isBlank() ? "ADMIN" : role.trim().toUpperCase();
+        if (!"ADMIN".equals(filterRole)) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(ApiResponse.error("INVALID_ROLE", "Only ADMIN users can be listed here"));
+        }
+
+        log.info("REST: List auth users request - page: {}, size: {}, role: {}", page, size, filterRole);
+
+        ApiResponse<List<UserResponse>> response = authGrpcClient.listUsers(page, size, filterRole);
 
         HttpStatus status = response.isSuccess() ? HttpStatus.OK : HttpStatus.FORBIDDEN;
         return ResponseEntity.status(status).body(response);
+    }
+
+    /**
+     * DELETE /api/v1/auth/users/{id}
+     * Delete an admin user (SuperAdmin only)
+     */
+    @DeleteMapping("/users/{id}")
+    public ResponseEntity<ApiResponse<String>> deleteUser(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable String id) {
+
+        AuthActor actor = requireSuperAdminActor(authorization);
+        if (actor == null) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(ApiResponse.error("FORBIDDEN", "Only SUPER_ADMIN can delete admin users"));
+        }
+
+        log.info("REST: Delete auth user request for userId: {}", id);
+
+        ApiResponse<String> response = authGrpcClient.deleteUser(id);
+
+        HttpStatus status = response.isSuccess() ? HttpStatus.OK : HttpStatus.BAD_REQUEST;
+        return ResponseEntity.status(status).body(response);
+    }
+
+    private AuthActor requireSuperAdminActor(String authorization) {
+        if (authorization == null || !authorization.startsWith("Bearer ")) {
+            return null;
+        }
+
+        String token = authorization.substring(7);
+        if (!jwtUtil.validateToken(token)) {
+            return null;
+        }
+
+        var claims = jwtUtil.extractAllClaims(token);
+        String role = claims.get("role", String.class);
+        if (!"SUPER_ADMIN".equals(role)) {
+            return null;
+        }
+
+        return new AuthActor(claims.getSubject(), role);
+    }
+
+    private record AuthActor(String userId, String role) {
     }
 }
