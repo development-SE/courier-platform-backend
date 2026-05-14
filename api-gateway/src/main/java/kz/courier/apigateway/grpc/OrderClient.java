@@ -13,6 +13,7 @@ import lombok.extern.slf4j.Slf4j;
 import net.devh.boot.grpc.client.inject.GrpcClient;
 import org.springframework.stereotype.Service;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -311,6 +312,134 @@ public class OrderClient {
         return java.time.Instant
                 .ofEpochSecond(timestamp.getSeconds(), timestamp.getNanos())
                 .toString();
+    }
+
+    private Instant toInstantOrNull(Timestamp value) {
+        if (value == null || (value.getSeconds() == 0 && value.getNanos() == 0)) {
+            return null;
+        }
+        return toInstant(value);
+    }
+
+    private Map<String, Object> mapOrder(GetOrderResponse grpcResponse) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("orderId", grpcResponse.getOrderId());
+        data.put("status", grpcResponse.getStatus().name());
+        data.put("serviceType", grpcResponse.getServiceType().name());
+        data.put("comment", grpcResponse.getComment());
+        data.put("totalAmount", grpcResponse.getTotalAmount());
+        data.put("itemsCount", grpcResponse.getItemsCount());
+
+        if (grpcResponse.hasCompanyId()) {
+            data.put("companyId", grpcResponse.getCompanyId());
+        }
+
+        Instant createdAt = toInstantOrNull(grpcResponse.getCreatedAt());
+        if (createdAt != null) {
+            data.put("createdAt", createdAt);
+        }
+
+        Instant updatedAt = toInstantOrNull(grpcResponse.getUpdatedAt());
+        if (updatedAt != null) {
+            data.put("updatedAt", updatedAt);
+        }
+
+        if (grpcResponse.hasDeliveryAddress()) {
+            data.put("deliveryAddress", mapAddress(grpcResponse.getDeliveryAddress()));
+        }
+
+        if (grpcResponse.hasPickupAddress()) {
+            data.put("pickupAddress", mapAddress(grpcResponse.getPickupAddress()));
+        }
+
+        if (grpcResponse.hasRecipientInfo()) {
+            data.put("recipientInfo", mapContactInfo(grpcResponse.getRecipientInfo()));
+        }
+
+        if (grpcResponse.hasPickupInfo()) {
+            data.put("pickupInfo", mapContactInfo(grpcResponse.getPickupInfo()));
+        }
+
+        if (!grpcResponse.getItemsList().isEmpty()) {
+            data.put("items", grpcResponse.getItemsList().stream()
+                    .map(this::mapOrderItem)
+                    .collect(Collectors.toList()));
+        }
+
+        if (grpcResponse.hasDeliveryConfirmationCode()) {
+            data.put("deliveryConfirmationCode", grpcResponse.getDeliveryConfirmationCode());
+        }
+
+        return data;
+    }
+
+    private Map<String, Object> mapAddress(Address address) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("addressId", address.getAddressId());
+        data.put("type", address.getType().name());
+        data.put("city", address.getCity());
+        data.put("street", address.getStreet());
+        data.put("house", address.getHouse());
+        data.put("latitude", address.getLatitude());
+        data.put("longitude", address.getLongitude());
+
+        if (address.hasApartment()) {
+            data.put("apartment", address.getApartment());
+        }
+        if (address.hasEntrance()) {
+            data.put("entrance", address.getEntrance());
+        }
+        if (address.hasFloor()) {
+            data.put("floor", address.getFloor());
+        }
+
+        Instant createdAt = toInstantOrNull(address.getCreatedAt());
+        if (createdAt != null) {
+            data.put("createdAt", createdAt);
+        }
+
+        Instant updatedAt = toInstantOrNull(address.getUpdatedAt());
+        if (updatedAt != null) {
+            data.put("updatedAt", updatedAt);
+        }
+
+        return data;
+    }
+
+    private Map<String, Object> mapContactInfo(ContactInfo contactInfo) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("contactId", contactInfo.getContactId());
+        data.put("name", contactInfo.getName());
+        data.put("phone", contactInfo.getPhone());
+
+        if (contactInfo.hasSurname()) {
+            data.put("surname", contactInfo.getSurname());
+        }
+
+        Instant createdAt = toInstantOrNull(contactInfo.getCreatedAt());
+        if (createdAt != null) {
+            data.put("createdAt", createdAt);
+        }
+
+        Instant updatedAt = toInstantOrNull(contactInfo.getUpdatedAt());
+        if (updatedAt != null) {
+            data.put("updatedAt", updatedAt);
+        }
+
+        return data;
+    }
+
+    private Map<String, Object> mapOrderItem(OrderItem item) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("itemId", item.getItemId());
+        data.put("name", item.getName());
+        data.put("quantity", item.getQuantity());
+
+        if (item.hasPrice()) {
+            data.put("price", item.getPrice());
+        }
+
+        return data;
     }
 
     // ── Error handling ────────────────────────────────────────────────────────

@@ -6,6 +6,7 @@ set -e
 
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
 
+<<<<<<< Updated upstream
   ----------------------------------------------------------------
   -- 1. Create one role per microservice (least-privilege)
   ----------------------------------------------------------------
@@ -18,6 +19,12 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
   CREATE ROLE courier_svc LOGIN PASSWORD 'courier_secret';
   CREATE ROLE company_svc LOGIN PASSWORD 'company_secret';
   CREATE ROLE logistics_svc LOGIN PASSWORD 'logistics_secret';
+=======
+ALTER ROLE ${db_user} WITH LOGIN PASSWORD '${db_password}';
+
+SELECT 'CREATE DATABASE ${db_name} OWNER ${db_user}'
+WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '${db_name}')\gexec
+>>>>>>> Stashed changes
 
   ----------------------------------------------------------------
   -- 2. Create dedicated database per service
