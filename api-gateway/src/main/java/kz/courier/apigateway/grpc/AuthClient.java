@@ -334,4 +334,76 @@ public class AuthClient {
             return ApiResponse.error("INTERNAL_ERROR", "An unexpected error occurred");
         }
     }
+
+    /**
+     * Get user profile by userId
+     */
+    public ApiResponse<UserResponse> getProfile(String userId) {
+        try {
+            log.info("gRPC GetUser request for userId: {}", userId);
+
+            GetUserRequest grpcRequest = GetUserRequest.newBuilder()
+                    .setUserId(userId)
+                    .build();
+
+            GetUserResponse grpcResponse = authStub.getUser(grpcRequest);
+
+            UserResponse profile = UserResponse.builder()
+                    .userId(grpcResponse.getUserId())
+                    .email(grpcResponse.getEmail())
+                    .firstName(grpcResponse.getFirstName())
+                    .lastName(grpcResponse.getLastName())
+                    .phone(grpcResponse.getPhone())
+                    .role(grpcResponse.getRole().name())
+                    .isEmailVerified(grpcResponse.getIsEmailVerified())
+                    .createdAt(grpcResponse.getCreatedAt().getSeconds())
+                    .build();
+
+            return ApiResponse.success(profile);
+
+        } catch (StatusRuntimeException e) {
+            log.error("gRPC error during getProfile: {}", e.getStatus());
+            return ApiResponse.error("GRPC_ERROR", "Service temporarily unavailable: " + e.getStatus().getDescription());
+        } catch (Exception e) {
+            log.error("Unexpected error during getProfile", e);
+            return ApiResponse.error("INTERNAL_ERROR", "An unexpected error occurred");
+        }
+    }
+
+    /**
+     * Update user profile (firstName, lastName, email, phone)
+     */
+    public ApiResponse<String> updateProfile(String userId, kz.courier.apigateway.dto.request.UpdateProfileRequest request) {
+        try {
+            log.info("gRPC UpdateUser request for userId: {}", userId);
+
+            UpdateUserRequest.Builder grpcRequest = UpdateUserRequest.newBuilder()
+                    .setUserId(userId);
+
+            if (request.getFirstName() != null) grpcRequest.setFirstName(request.getFirstName());
+            if (request.getLastName() != null)  grpcRequest.setLastName(request.getLastName());
+            if (request.getEmail() != null)     grpcRequest.setEmail(request.getEmail());
+            if (request.getPhone() != null)     grpcRequest.setPhone(request.getPhone());
+
+            kz.courier.common.v1.Response grpcResponse = authStub.updateUser(grpcRequest.build());
+
+            if (!grpcResponse.getSuccess()) {
+                log.warn("Update profile failed: {}", grpcResponse.getError().getMessage());
+                return ApiResponse.error(
+                        grpcResponse.getError().getCode(),
+                        grpcResponse.getError().getMessage()
+                );
+            }
+
+            log.info("Profile updated successfully for userId: {}", userId);
+            return ApiResponse.success("Profile updated successfully");
+
+        } catch (StatusRuntimeException e) {
+            log.error("gRPC error during updateProfile: {}", e.getStatus());
+            return ApiResponse.error("GRPC_ERROR", "Service temporarily unavailable: " + e.getStatus().getDescription());
+        } catch (Exception e) {
+            log.error("Unexpected error during updateProfile", e);
+            return ApiResponse.error("INTERNAL_ERROR", "An unexpected error occurred");
+        }
+    }
 }

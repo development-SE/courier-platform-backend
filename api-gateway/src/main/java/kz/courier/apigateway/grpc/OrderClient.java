@@ -13,12 +13,12 @@ import lombok.extern.slf4j.Slf4j;
 import net.devh.boot.grpc.client.inject.GrpcClient;
 import org.springframework.stereotype.Service;
 
+import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
-import java.time.OffsetDateTime;
 
 /**
  * gRPC client facade for the order-service.
@@ -268,50 +268,8 @@ public class OrderClient {
                 .build();
     }
 
-    private Map<String, Object> mapOrder(GetOrderResponse order) {
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("orderId", order.getOrderId());
-        body.put("status", order.getStatus().name());
-        body.put("serviceType", order.getServiceType().name());
-        body.put("comment", order.getComment());
-        body.put("deliveryAddress", mapAddress(order.getDeliveryAddress()));
-        body.put("recipientInfo", mapContact(order.getRecipientInfo()));
-        body.put("pickupAddress", mapAddress(order.getPickupAddress()));
-        body.put("pickupInfo", mapContact(order.getPickupInfo()));
-        body.put("createdAt", toIsoString(order.getCreatedAt()));
-        body.put("updatedAt", toIsoString(order.getUpdatedAt()));
-        body.put("companyId", order.hasCompanyId() ? order.getCompanyId() : "");
-        body.put("totalAmount", order.getTotalAmount());
-        return body;
-    }
-
-    private Map<String, Object> mapAddress(Address address) {
-        return Map.of(
-                "addressId", address.getAddressId(),
-                "type", address.getType().name(),
-                "city", address.getCity(),
-                "street", address.getStreet(),
-                "house", address.getHouse(),
-                "apartment", address.hasApartment() ? address.getApartment() : "",
-                "entrance", address.hasEntrance() ? address.getEntrance() : "",
-                "latitude", address.getLatitude(),
-                "longitude", address.getLongitude()
-        );
-    }
-
-    private Map<String, Object> mapContact(ContactInfo contact) {
-        return Map.of(
-                "contactId", contact.getContactId(),
-                "name", contact.getName(),
-                "surname", contact.hasSurname() ? contact.getSurname() : "",
-                "phone", contact.getPhone()
-        );
-    }
-
-    private String toIsoString(Timestamp timestamp) {
-        return java.time.Instant
-                .ofEpochSecond(timestamp.getSeconds(), timestamp.getNanos())
-                .toString();
+    private Instant toInstant(Timestamp value) {
+        return Instant.ofEpochSecond(value.getSeconds(), value.getNanos());
     }
 
     private Instant toInstantOrNull(Timestamp value) {
@@ -364,10 +322,6 @@ public class OrderClient {
             data.put("items", grpcResponse.getItemsList().stream()
                     .map(this::mapOrderItem)
                     .collect(Collectors.toList()));
-        }
-
-        if (grpcResponse.hasDeliveryConfirmationCode()) {
-            data.put("deliveryConfirmationCode", grpcResponse.getDeliveryConfirmationCode());
         }
 
         return data;

@@ -20,15 +20,8 @@ public class CorsConfig {
                 "http://localhost:3000",
                 "http://localhost:3001",
                 "http://localhost:5173",
-<<<<<<< Updated upstream
-                "0.0.0.0",
-                "http://10.202.18.97:*"
-               
-        ));
-=======
-                "http://10.202.19.170:*",
+                "http://192.168.1.252:*",
                 "0.0.0.0"));
->>>>>>> Stashed changes
 
         config.setAllowedMethods(Arrays.asList(
                 "GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));

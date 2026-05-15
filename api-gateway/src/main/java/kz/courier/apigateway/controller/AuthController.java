@@ -5,6 +5,7 @@ import kz.courier.apigateway.dto.request.CreateStaffUserRequest;
 import kz.courier.apigateway.dto.request.LoginRequest;
 import kz.courier.apigateway.dto.request.RefreshTokenRequest;
 import kz.courier.apigateway.dto.request.RegisterRequest;
+import kz.courier.apigateway.dto.request.UpdateProfileRequest;
 import kz.courier.apigateway.dto.response.*;
 import kz.courier.apigateway.grpc.AuthClient;
 import kz.courier.apigateway.security.JwtUtil;
@@ -56,8 +57,7 @@ public class AuthController {
                     .body(ApiResponse.error("FORBIDDEN", "Only SUPER_ADMIN can create admin users"));
         }
 
-        ApiResponse<RegisterResponse> response =
-                authGrpcClient.createStaffUser(request, actor.userId(), actor.role());
+        ApiResponse<RegisterResponse> response = authGrpcClient.createStaffUser(request, actor.userId(), actor.role());
 
         HttpStatus status = response.isSuccess() ? HttpStatus.CREATED : HttpStatus.BAD_REQUEST;
         return ResponseEntity.status(status).body(response);
@@ -112,8 +112,54 @@ public class AuthController {
     }
 
     /**
-     * GET /api/v1/auth/users?page=1&size=10
-     * List auth users (SuperAdmin only)
+     * GET /api/v1/auth/profile
+     * Get the authenticated user's own profile
+     */
+    @GetMapping("/profile")
+    public ResponseEntity<ApiResponse<UserResponse>> getProfile(
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+
+        AuthActor actor = requireAuthenticatedActor(authorization);
+        if (actor == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(ApiResponse.error("UNAUTHORIZED", "Valid token required"));
+        }
+
+        log.info("REST: Get profile for userId: {}", actor.userId());
+
+        ApiResponse<UserResponse> response = authGrpcClient.getProfile(actor.userId());
+
+        HttpStatus status = response.isSuccess() ? HttpStatus.OK : HttpStatus.BAD_REQUEST;
+        return ResponseEntity.status(status).body(response);
+    }
+
+    /**
+     * PUT /api/v1/auth/profile
+     * Update the authenticated user's own profile (firstName, lastName, email,
+     * phone)
+     */
+    @PutMapping("/profile")
+    public ResponseEntity<ApiResponse<String>> updateProfile(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @RequestBody UpdateProfileRequest request) {
+
+        AuthActor actor = requireAuthenticatedActor(authorization);
+        if (actor == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(ApiResponse.error("UNAUTHORIZED", "Valid token required"));
+        }
+
+        log.info("REST: Update profile for userId: {}", actor.userId());
+
+        ApiResponse<String> response = authGrpcClient.updateProfile(actor.userId(), request);
+
+        HttpStatus status = response.isSuccess() ? HttpStatus.OK : HttpStatus.BAD_REQUEST;
+        return ResponseEntity.status(status).body(response);
+    }
+
+    /**
+     * GET /api/v1/auth/users?page=1&size=10&role=ADMIN
+     * List auth users by role
      */
     @GetMapping("/users")
     public ResponseEntity<ApiResponse<List<UserResponse>>> listUsers(
@@ -122,39 +168,45 @@ public class AuthController {
             @RequestParam(defaultValue = "10") int size,
             @RequestParam(defaultValue = "ADMIN") String role) {
 
-        AuthActor actor = requireSuperAdminActor(authorization);
-        if (actor == null) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body(ApiResponse.error("FORBIDDEN", "Only SUPER_ADMIN can view admin users"));
-        }
-
         String filterRole = role == null || role.isBlank() ? "ADMIN" : role.trim().toUpperCase();
-        if (!"ADMIN".equals(filterRole)) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(ApiResponse.error("INVALID_ROLE", "Only ADMIN users can be listed here"));
+
+        // ADMIN role listing requires SUPER_ADMIN access
+        if ("ADMIN".equals(filterRole)) {
+            AuthActor actor = requireSuperAdminActor(authorization);
+            if (actor == null) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body(ApiResponse.error("FORBIDDEN", "Only SUPER_ADMIN can view admin users"));
+            }
+        } else {
+            // CLIENT, COURIER etc. require any authenticated actor (e.g. ADMIN)
+            AuthActor actor = requireAuthenticatedActor(authorization);
+            if (actor == null) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                        .body(ApiResponse.error("UNAUTHORIZED", "Valid token required"));
+            }
         }
 
         log.info("REST: List auth users request - page: {}, size: {}, role: {}", page, size, filterRole);
 
         ApiResponse<List<UserResponse>> response = authGrpcClient.listUsers(page, size, filterRole);
 
-        HttpStatus status = response.isSuccess() ? HttpStatus.OK : HttpStatus.FORBIDDEN;
+        HttpStatus status = response.isSuccess() ? HttpStatus.OK : HttpStatus.BAD_REQUEST;
         return ResponseEntity.status(status).body(response);
     }
 
     /**
      * DELETE /api/v1/auth/users/{id}
-     * Delete an admin user (SuperAdmin only)
+     * Delete an auth user (ADMIN or SUPER_ADMIN required)
      */
     @DeleteMapping("/users/{id}")
     public ResponseEntity<ApiResponse<String>> deleteUser(
             @RequestHeader(value = "Authorization", required = false) String authorization,
             @PathVariable String id) {
 
-        AuthActor actor = requireSuperAdminActor(authorization);
-        if (actor == null) {
+        AuthActor actor = requireAuthenticatedActor(authorization);
+        if (actor == null || (!"SUPER_ADMIN".equals(actor.role()) && !"ADMIN".equals(actor.role()))) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body(ApiResponse.error("FORBIDDEN", "Only SUPER_ADMIN can delete admin users"));
+                    .body(ApiResponse.error("FORBIDDEN", "Only ADMIN or SUPER_ADMIN can delete users"));
         }
 
         log.info("REST: Delete auth user request for userId: {}", id);
@@ -163,6 +215,22 @@ public class AuthController {
 
         HttpStatus status = response.isSuccess() ? HttpStatus.OK : HttpStatus.BAD_REQUEST;
         return ResponseEntity.status(status).body(response);
+    }
+
+    private AuthActor requireAuthenticatedActor(String authorization) {
+        if (authorization == null || !authorization.startsWith("Bearer ")) {
+            return null;
+        }
+
+        String token = authorization.substring(7);
+        if (!jwtUtil.validateToken(token)) {
+            return null;
+        }
+
+        var claims = jwtUtil.extractAllClaims(token);
+        String role = claims.get("role", String.class);
+
+        return new AuthActor(claims.getSubject(), role != null ? role : "CLIENT");
     }
 
     private AuthActor requireSuperAdminActor(String authorization) {
