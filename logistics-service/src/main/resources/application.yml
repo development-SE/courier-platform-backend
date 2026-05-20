@@ -6,7 +6,7 @@ spring:
     name: logistics-service
 
   datasource:
-    url: jdbc:postgresql://localhost:5433/logistics_db
+    url: jdbc:postgresql://127.0.0.1:55433/logistics_db
     username: logistics_svc
     password: logistics_secret
     driver-class-name: org.postgresql.Driver

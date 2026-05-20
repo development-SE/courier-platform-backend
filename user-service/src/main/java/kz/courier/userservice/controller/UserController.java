@@ -8,6 +8,7 @@ import kz.courier.userservice.service.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Collections;
@@ -41,6 +42,28 @@ public class UserController {
     @PostMapping
     public ResponseEntity<UserDto.Response> create(@Valid @RequestBody UserDto.CreateRequest req) {
         return ResponseEntity.status(HttpStatus.CREATED).body(userService.create(req));
+    }
+
+    /**
+     * GET /users/me
+     * Get the currently authenticated user by JWT email claim.
+     */
+    @GetMapping("/me")
+    public ResponseEntity<UserDto.Response> getMe(Authentication authentication) {
+        String email = authentication != null && authentication.getDetails() instanceof String details
+                ? details
+                : null;
+        String userId = authentication != null && authentication.getPrincipal() != null
+                ? authentication.getPrincipal().toString()
+                : null;
+        String role = authentication != null && authentication.getAuthorities() != null
+                ? authentication.getAuthorities().stream()
+                    .findFirst()
+                    .map(grantedAuthority -> grantedAuthority.getAuthority().replaceFirst("^ROLE_", ""))
+                    .orElse(null)
+                : null;
+
+        return ResponseEntity.ok(userService.getCurrentUser(email, userId, role));
     }
 
     /**

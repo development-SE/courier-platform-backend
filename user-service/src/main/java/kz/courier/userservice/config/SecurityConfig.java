@@ -14,7 +14,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 
 @Configuration
 @EnableWebSecurity
-@EnableMethodSecurity          // enables @PreAuthorize on service/controller methods
+@EnableMethodSecurity
 @RequiredArgsConstructor
 public class SecurityConfig {
 
@@ -26,21 +26,20 @@ public class SecurityConfig {
             .csrf(csrf -> csrf.disable())
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
-                // GET /users and GET /users/{id} — ADMIN and above
-                .requestMatchers(HttpMethod.GET,    "/users/**")
+                .requestMatchers(HttpMethod.GET, "/users/me")
+                    .authenticated()
+                .requestMatchers(HttpMethod.GET, "/users/**")
                     .hasAnyRole("ADMIN", "SUPER_ADMIN")
-                // POST /users — ADMIN and above
-                .requestMatchers(HttpMethod.POST,   "/users")
+                .requestMatchers(HttpMethod.POST, "/users")
                     .hasAnyRole("ADMIN", "SUPER_ADMIN")
-                // PUT /users/{id} — ADMIN and above
-                .requestMatchers(HttpMethod.PUT,    "/users/**")
+                .requestMatchers(HttpMethod.PUT, "/users/**")
                     .hasAnyRole("ADMIN", "SUPER_ADMIN")
-                // DELETE /users/{id} — SUPER_ADMIN only
                 .requestMatchers(HttpMethod.DELETE, "/users/**")
                     .hasRole("SUPER_ADMIN")
-                // Actuator
-                .requestMatchers("/actuator/**").permitAll()
-                .anyRequest().authenticated()
+                .requestMatchers("/actuator/**")
+                    .permitAll()
+                .anyRequest()
+                    .authenticated()
             )
             .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 

@@ -112,8 +112,8 @@ public class AuthController {
     }
 
     /**
-     * GET /api/v1/auth/users?page=1&size=10
-     * List auth users (SuperAdmin only)
+     * GET /api/v1/auth/users?page=1&size=10&role=COURIER
+     * List auth users for admin views.
      */
     @GetMapping("/users")
     public ResponseEntity<ApiResponse<List<UserResponse>>> listUsers(
@@ -122,16 +122,20 @@ public class AuthController {
             @RequestParam(defaultValue = "10") int size,
             @RequestParam(defaultValue = "ADMIN") String role) {
 
-        AuthActor actor = requireSuperAdminActor(authorization);
+        AuthActor actor = requirePrivilegedActor(authorization);
         if (actor == null) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body(ApiResponse.error("FORBIDDEN", "Only SUPER_ADMIN can view admin users"));
+                    .body(ApiResponse.error("FORBIDDEN", "Only privileged users can view users"));
         }
 
         String filterRole = role == null || role.isBlank() ? "ADMIN" : role.trim().toUpperCase();
-        if (!"ADMIN".equals(filterRole)) {
+        if (!List.of("ADMIN", "COURIER").contains(filterRole)) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(ApiResponse.error("INVALID_ROLE", "Only ADMIN users can be listed here"));
+                    .body(ApiResponse.error("INVALID_ROLE", "Only ADMIN or COURIER users can be listed here"));
+        }
+        if ("ADMIN".equals(filterRole) && !"SUPER_ADMIN".equals(actor.role())) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(ApiResponse.error("FORBIDDEN", "Only SUPER_ADMIN can view admin users"));
         }
 
         log.info("REST: List auth users request - page: {}, size: {}, role: {}", page, size, filterRole);
@@ -166,6 +170,11 @@ public class AuthController {
     }
 
     private AuthActor requireSuperAdminActor(String authorization) {
+        AuthActor actor = requirePrivilegedActor(authorization);
+        return actor != null && "SUPER_ADMIN".equals(actor.role()) ? actor : null;
+    }
+
+    private AuthActor requirePrivilegedActor(String authorization) {
         if (authorization == null || !authorization.startsWith("Bearer ")) {
             return null;
         }
@@ -177,7 +186,7 @@ public class AuthController {
 
         var claims = jwtUtil.extractAllClaims(token);
         String role = claims.get("role", String.class);
-        if (!"SUPER_ADMIN".equals(role)) {
+        if (!List.of("ADMIN", "SUPER_ADMIN", "DIRECTOR", "MANAGER").contains(role)) {
             return null;
         }
 

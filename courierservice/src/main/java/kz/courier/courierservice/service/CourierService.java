@@ -5,6 +5,7 @@ import kz.courier.courierservice.entity.CourierProfile;
 import kz.courier.courierservice.entity.CourierType;
 import kz.courier.courierservice.entity.CourierWorkSchedule;
 import kz.courier.courierservice.entity.EmploymentStatus;
+import kz.courier.courierservice.entity.TransportType;
 import kz.courier.courierservice.exception.BusinessException;
 import kz.courier.courierservice.exception.CourierNotFoundException;
 import kz.courier.courierservice.repository.CourierProfileRepository;
@@ -12,6 +13,10 @@ import kz.courier.courierservice.security.GatewayPrincipalProvider;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.domain.Pageable;
 
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
@@ -34,6 +39,29 @@ public class CourierService {
     private final GatewayPrincipalProvider gatewayPrincipalProvider;
 
     public CourierDto.CourierProfileResponse create(CourierDto.CreateCourierRequest req) {
+
+        boolean isPrivileged = gatewayPrincipalProvider.hasAnyRole("ADMIN", "SUPER_ADMIN");
+        if (!isPrivileged) {
+        UUID callerUserId = gatewayPrincipalProvider.requireCurrentUserId();
+        if (!callerUserId.equals(req.userId())) {
+            throw new BusinessException("FORBIDDEN",
+                    "Couriers can only create their own profile");
+        }
+        // force contractor defaults — courier cannot choose type or self-verify
+        req = new CourierDto.CreateCourierRequest(
+                req.userId(),
+                null,                        // no company
+                CourierType.CONTRACTOR,      // always contractor
+                EmploymentStatus.ONBOARDING, // always starts onboarding
+                req.transportType(),         // courier chooses transport
+                false,                       // isVerified = false
+                false,                       // canTakeOrders = false
+                1,                           // maxActiveOrders = 1
+                req.notes(),
+                null                         // no schedules
+        );
+    }
+
         if (courierProfileRepository.existsByUserId(req.userId())) {
             throw new BusinessException("COURIER_ALREADY_EXISTS",
                     "Courier profile already exists for user " + req.userId());
@@ -63,9 +91,24 @@ public class CourierService {
     }
 
     @Transactional(readOnly = true)
+    public Page<CourierDto.CourierProfileResponse> list(UUID companyId, int page, int size) {
+        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
+        return courierProfileRepository.findAllFiltered(companyId, pageable)
+                .map(this::toResponse);
+    }
+
+    @Transactional(readOnly = true)
     public CourierDto.CourierProfileResponse getByUserId(UUID userId) {
         return toResponse(courierProfileRepository.findWithSchedulesByUserId(userId)
                 .orElseThrow(() -> new CourierNotFoundException(userId)));
+    }
+
+    @Transactional(readOnly = true)
+    public CourierDto.CourierProfileResponse getCurrent() {
+        UUID currentUserId = gatewayPrincipalProvider.requireCurrentUserId();
+        return courierProfileRepository.findWithSchedulesByUserId(currentUserId)
+                .map(this::toResponse)
+                .orElseGet(() -> buildSelfRegisteredContractor(currentUserId));
     }
 
     public CourierDto.CourierProfileResponse update(UUID courierId, CourierDto.UpdateCourierRequest req) {
@@ -141,6 +184,28 @@ public class CourierService {
             throw new BusinessException("FORBIDDEN",
                     "Only privileged roles may read courier eligibility");
         }
+    }
+
+    private CourierDto.CourierProfileResponse buildSelfRegisteredContractor(UUID userId) {
+        if (!gatewayPrincipalProvider.hasAnyRole("COURIER")) {
+            throw new CourierNotFoundException(userId);
+        }
+
+        return CourierDto.CourierProfileResponse.builder()
+                .id(null)
+                .userId(userId)
+                .companyId(null)
+                .courierType(CourierType.CONTRACTOR)
+                .employmentStatus(EmploymentStatus.ONBOARDING)
+                .transportType((TransportType) null)
+                .isVerified(false)
+                .canTakeOrders(false)
+                .maxActiveOrders(1)
+                .notes("Contractor profile is being prepared. Complete courier onboarding to start taking orders.")
+                .schedules(List.of())
+                .createdAt(null)
+                .updatedAt(null)
+                .build();
     }
 
     private CourierProfile findWithSchedules(UUID courierId) {
