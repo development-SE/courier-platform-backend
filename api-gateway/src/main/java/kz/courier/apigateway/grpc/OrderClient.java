@@ -236,8 +236,13 @@ public class OrderClient {
                 );
             }
 
-            List<Map<String, Object>> orders = grpcResponse.getOrdersList().stream()
-                    .map(this::mapOrder)
+            List<Map<String, String>> orders = grpcResponse.getOrdersList().stream()
+                    .map(o -> Map.of(
+                            "orderId", o.getOrderId(),
+                            "status",  o.getStatus().name(),
+                            "companyId", o.hasCompanyId() ? o.getCompanyId() : "",
+                            "totalAmount", String.valueOf(o.getTotalAmount())
+                    ))
                     .toList();
 
             return ApiResponse.success(Map.of(
