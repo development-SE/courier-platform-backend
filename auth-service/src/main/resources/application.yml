@@ -6,7 +6,7 @@ spring:
   application:
     name: ${AUTH_SERVICE_NAME:auth-service}
   datasource:
-    url: ${AUTH_DB_URL:jdbc:postgresql://localhost:5433/auth_db}
+    url: ${AUTH_DB_URL:jdbc:postgresql://localhost:55433/auth_db}
     username: ${AUTH_DB_USERNAME:auth_svc}
     password: ${AUTH_DB_PASSWORD:auth_secret}
     driver-class-name: org.postgresql.Driver
@@ -87,5 +87,6 @@ logging:
 
 
 ## external url paths
-API_BASE_URL: ${API_BASE_URL:http://localhost:8080/}
-API_VERIFY_PATH: ${API_VERIFY_PATH:api/v1/auth/verify}
+api:
+  base-url: ${API_BASE_URL:http://localhost:8080/}
+  verify-path: ${API_VERIFY_PATH:api/v1/auth/verify}

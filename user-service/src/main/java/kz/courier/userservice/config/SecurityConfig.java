@@ -28,6 +28,8 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(HttpMethod.GET, "/users/me")
                     .authenticated()
+                .requestMatchers("/users/me/addresses", "/users/me/addresses/**")
+                    .authenticated()
                 .requestMatchers(HttpMethod.GET, "/users/**")
                     .hasAnyRole("ADMIN", "SUPER_ADMIN")
                 .requestMatchers(HttpMethod.POST, "/users")

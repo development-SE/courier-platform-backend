@@ -47,6 +47,15 @@ spring:
             - name: LoggingFilter
             - StripPrefix=2
 
+        - id: user-service-my-addresses
+          uri: ${USER_SERVICE_URL:lb://user-service}
+          predicates:
+            - Path=/api/v1/users/me/addresses,/api/v1/users/me/addresses/**
+          filters:
+            - name: JwtAuthenticationFilter
+            - name: LoggingFilter
+            - StripPrefix=2
+
         - id: user-service
           uri: ${USER_SERVICE_URL:lb://user-service}
           predicates:
