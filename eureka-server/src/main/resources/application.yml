@@ -1,19 +1,19 @@
 server:
-  port: 8761  # Default Eureka port
+  port: ${EUREKA_SERVER_PORT:8761}
 
 spring:
   application:
-    name: eureka-server
+    name: ${EUREKA_SERVER_NAME:eureka-server}
 
 eureka:
   instance:
-    hostname: localhost
+    hostname: ${EUREKA_HOST:localhost}
   client:
     # Don't register Eureka with itself
     register-with-eureka: false
     fetch-registry: false
     service-url:
-      defaultZone: http://${eureka.instance.hostname}:${server.port}/eureka/
+      defaultZone: ${EUREKA_SELF_URL:http://${eureka.instance.hostname}:${server.port}/eureka/}
   server:
     # Disable self-preservation in dev (allows faster instance removal)
     enable-self-preservation: false

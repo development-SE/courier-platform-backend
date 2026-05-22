@@ -8,6 +8,7 @@ public enum OrderStatus {
     ASSIGNED,
     PICKED_UP,
     IN_TRANSIT,
+    DELIVERY_CONFIRMATION_PENDING,
     DELIVERED,
     CANCELLED,
     REJECTED

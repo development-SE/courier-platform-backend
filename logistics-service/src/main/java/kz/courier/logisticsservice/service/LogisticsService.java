@@ -50,6 +50,8 @@ public class LogisticsService {
     private static final double FRESHNESS_WEIGHT = 0.20;
     private static final Set<String> PRIVILEGED_LOCATION_ROLES =
             Set.of("ADMIN", "SUPER_ADMIN");
+    private static final Set<String> PRIVILEGED_ASSIGNMENT_ROLES =
+            Set.of("ADMIN", "SUPER_ADMIN");
 
     private final AssignmentRepository assignmentRepository;
     private final AssignmentHistoryRepository historyRepository;
@@ -190,6 +192,7 @@ public class LogisticsService {
     @Transactional
     public LogisticsDto.AssignmentResponse updateStatus(UUID id, LogisticsDto.UpdateStatusRequest req) {
         CourierAssignment assignment = findAssignment(id);
+        requireAssignmentActor(assignment, "change assignment status");
         AssignmentStatus oldStatus = assignment.getAssignmentStatus();
 
         if (oldStatus.isTerminal()) {
@@ -199,11 +202,17 @@ public class LogisticsService {
 
         validateTransition(oldStatus, req.newStatus());
 
+        if (req.newStatus() == AssignmentStatus.DELIVERED) {
+            throw new BusinessException("DEDICATED_FLOW_REQUIRED",
+                    "Use /assignments/{id}/verify-delivery-code to complete delivery");
+        }
+
         assignment.setAssignmentStatus(req.newStatus());
         applyTimestamps(assignment, req.newStatus());
         assignment = assignmentRepository.save(assignment);
 
-        recordHistory(id, oldStatus, req.newStatus(), req.changedBy(), req.reason());
+        UUID changedBy = gatewayPrincipalProvider.requireCurrentUserId();
+        recordHistory(id, oldStatus, req.newStatus(), changedBy, req.reason());
         log.info("Assignment {} transitioned {} -> {}", id, oldStatus, req.newStatus());
 
         eventPublisher.publishStatusChanged(
@@ -211,6 +220,84 @@ public class LogisticsService {
                 oldStatus, req.newStatus());
 
         return mapper.toResponse(assignment);
+    }
+
+    /**
+     * Verifies customer OTP and closes the assignment as DELIVERED.
+     *
+     * <p>The courier calls this logistics endpoint, not order-service directly.
+     * This keeps the assigned-courier rule close to assignment data. The OTP is
+     * verified synchronously by order-service; only after success do we mark the
+     * assignment delivered and publish the final logistics event.
+     */
+    @Transactional
+    public LogisticsDto.AssignmentResponse verifyDeliveryCode(
+            UUID id,
+            LogisticsDto.VerifyDeliveryCodeRequest req) {
+
+        CourierAssignment assignment = findAssignment(id);
+        requireAssignmentActor(assignment, "verify delivery code");
+
+        if (assignment.getAssignmentStatus() != AssignmentStatus.ARRIVED) {
+            throw new BusinessException("INVALID_STATUS",
+                    "Delivery code can be verified only after courier arrival");
+        }
+
+        OrderStatus orderStatus = orderGrpcClient.verifyDeliveryCode(
+                assignment.getOrderId(), req.confirmationCode());
+        if (orderStatus != OrderStatus.DELIVERED) {
+            throw new BusinessException("ORDER_NOT_DELIVERED",
+                    "order-service did not mark the order as delivered");
+        }
+
+        AssignmentStatus oldStatus = assignment.getAssignmentStatus();
+        assignment.setAssignmentStatus(AssignmentStatus.DELIVERED);
+        applyTimestamps(assignment, AssignmentStatus.DELIVERED);
+        assignment = assignmentRepository.save(assignment);
+
+        UUID changedBy = gatewayPrincipalProvider.requireCurrentUserId();
+        recordHistory(id, oldStatus, AssignmentStatus.DELIVERED, changedBy, "otp-verified");
+        eventPublisher.publishStatusChanged(
+                id, assignment.getOrderId(), assignment.getCourierId(),
+                oldStatus, AssignmentStatus.DELIVERED);
+
+        log.info("Assignment {} delivered after OTP verification orderId={} courierId={}",
+                id, assignment.getOrderId(), assignment.getCourierId());
+        return mapper.toResponse(assignment);
+    }
+
+    /**
+     * Resends the current OTP, or asks order-service to regenerate it when the
+     * old code expired. Only the assigned courier or admin may trigger resend.
+     */
+    @Transactional(readOnly = true)
+    public LogisticsDto.ResendDeliveryCodeResponse resendDeliveryCode(UUID id) {
+        CourierAssignment assignment = findAssignment(id);
+        requireAssignmentActor(assignment, "resend delivery code");
+
+        if (assignment.getAssignmentStatus() != AssignmentStatus.ARRIVED) {
+            throw new BusinessException("INVALID_STATUS",
+                    "Delivery code can be resent only after courier arrival");
+        }
+
+        OrderGrpcClient.ResendDeliveryCodeResult result =
+                orderGrpcClient.resendDeliveryConfirmationCode(assignment.getOrderId());
+
+        if (result.status() != OrderStatus.DELIVERY_CONFIRMATION_PENDING) {
+            throw new BusinessException("ORDER_NOT_PENDING_CONFIRMATION",
+                    "order-service is not waiting for delivery confirmation");
+        }
+
+        log.info("Delivery code resent assignmentId={} orderId={} regenerated={}",
+                id, assignment.getOrderId(), result.regenerated());
+
+        return LogisticsDto.ResendDeliveryCodeResponse.builder()
+                .assignmentId(id)
+                .orderId(assignment.getOrderId())
+                .assignmentStatus(assignment.getAssignmentStatus())
+                .regenerated(result.regenerated())
+                .expiresAt(result.expiresAt())
+                .build();
     }
 
     // =========================================================================
@@ -365,6 +452,27 @@ public class LogisticsService {
 
         throw new BusinessException("FORBIDDEN",
                 "You may only " + action + " for your own courier profile");
+    }
+
+    /**
+     * Only the assigned courier may move their delivery assignment forward.
+     * Managers/admins are allowed as explicit operational override.
+     */
+    private void requireAssignmentActor(CourierAssignment assignment, String action) {
+        UUID currentUserId = gatewayPrincipalProvider.requireCurrentUserId();
+
+        if (currentUserId.equals(assignment.getCourierId())) {
+            return;
+        }
+
+        if (gatewayPrincipalProvider.hasAnyRole(PRIVILEGED_ASSIGNMENT_ROLES.toArray(String[]::new))) {
+            log.warn("Assignment admin override action={} actorId={} assignmentId={} courierId={}",
+                    action, currentUserId, assignment.getId(), assignment.getCourierId());
+            return;
+        }
+
+        throw new BusinessException("FORBIDDEN",
+                "Only the assigned courier can " + action);
     }
 
     private CourierAssignment createAssignmentInternal(
@@ -561,7 +669,8 @@ public class LogisticsService {
                     || to == AssignmentStatus.CANCELLED;
             case ACCEPTED -> to == AssignmentStatus.PICKED_UP || to == AssignmentStatus.CANCELLED;
             case PICKED_UP -> to == AssignmentStatus.IN_TRANSIT;
-            case IN_TRANSIT -> to == AssignmentStatus.DELIVERED || to == AssignmentStatus.FAILED;
+            case IN_TRANSIT -> to == AssignmentStatus.ARRIVED || to == AssignmentStatus.FAILED;
+            case ARRIVED -> to == AssignmentStatus.DELIVERED || to == AssignmentStatus.FAILED;
             default -> false;
         };
 

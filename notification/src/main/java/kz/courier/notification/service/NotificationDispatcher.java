@@ -18,6 +18,7 @@ import java.util.Map;
 public class NotificationDispatcher {
 
     private final EmailService emailService;
+    private final DeliveryConfirmationPushService deliveryConfirmationPushService;
 
     public void dispatch(NotificationEvent event) {
         if (event.getType() == null || event.getType().isBlank()) {
@@ -31,6 +32,8 @@ public class NotificationDispatcher {
                 case EMAIL_VERIFICATION -> handleEmailVerification(event);
                 case PASSWORD_CHANGED   -> handlePasswordChanged(event);
                 case ACCOUNT_DELETED    -> handleAccountDeleted(event);
+                case DELIVERY_CONFIRMATION_CODE_CREATED ->
+                        deliveryConfirmationPushService.sendDeliveryConfirmationCode(event);
             }
         } catch (IllegalArgumentException ex) {
             log.warn("Unknown event type '{}' — skipping. eventId={}", event.getType(), event.getEventId());

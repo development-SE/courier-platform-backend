@@ -14,9 +14,9 @@ import net.devh.boot.grpc.client.inject.GrpcClient;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
-import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
+import java.time.Instant;
 import java.time.OffsetDateTime;
 
 /**
@@ -162,7 +162,16 @@ public class OrderClient {
                 );
             }
 
-            return ApiResponse.success(mapOrder(grpcResponse));
+            Map<String, Object> data = new java.util.HashMap<>();
+            data.put("orderId", grpcResponse.getOrderId());
+            data.put("status", grpcResponse.getStatus().name());
+            data.put("serviceType", grpcResponse.getServiceType().name());
+            data.put("comment", grpcResponse.getComment());
+            if (grpcResponse.hasDeliveryConfirmationCode()) {
+                data.put("deliveryConfirmationCode", grpcResponse.getDeliveryConfirmationCode());
+            }
+
+            return ApiResponse.success(data);
 
         } catch (StatusRuntimeException e) {
             return handleGrpcError(e);
@@ -264,6 +273,35 @@ public class OrderClient {
         }
     }
 
+    public ApiResponse<Map<String, Object>> getDeliveryConfirmationCode(String orderId, AuthContext auth) {
+        try {
+            log.info("gRPC GetDeliveryConfirmationCode request for id: {}", orderId);
+
+            GetDeliveryConfirmationCodeResponse grpcResponse = authStub(auth).getDeliveryConfirmationCode(
+                    GetDeliveryConfirmationCodeRequest.newBuilder()
+                            .setOrderId(orderId)
+                            .build());
+
+            if (grpcResponse.hasResponse() && !grpcResponse.getResponse().getSuccess()) {
+                return ApiResponse.error(
+                        grpcResponse.getResponse().getError().getCode(),
+                        grpcResponse.getResponse().getError().getMessage()
+                );
+            }
+
+            return ApiResponse.success(Map.of(
+                    "confirmationCode", grpcResponse.getConfirmationCode(),
+                    "expiresAt", toInstant(grpcResponse.getExpiresAt()),
+                    "attemptsRemaining", grpcResponse.getAttemptsRemaining()
+            ));
+        } catch (StatusRuntimeException e) {
+            return handleGrpcError(e);
+        } catch (Exception e) {
+            log.error("Unexpected error getting delivery confirmation code", e);
+            return ApiResponse.error("INTERNAL_ERROR", "An unexpected error occurred");
+        }
+    }
+
     private Timestamp toTimestamp(OffsetDateTime value) {
         var instant = value.toInstant();
         return Timestamp.newBuilder()
@@ -272,50 +310,8 @@ public class OrderClient {
                 .build();
     }
 
-    private Map<String, Object> mapOrder(GetOrderResponse order) {
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("orderId", order.getOrderId());
-        body.put("status", order.getStatus().name());
-        body.put("serviceType", order.getServiceType().name());
-        body.put("comment", order.getComment());
-        body.put("deliveryAddress", mapAddress(order.getDeliveryAddress()));
-        body.put("recipientInfo", mapContact(order.getRecipientInfo()));
-        body.put("pickupAddress", mapAddress(order.getPickupAddress()));
-        body.put("pickupInfo", mapContact(order.getPickupInfo()));
-        body.put("createdAt", toIsoString(order.getCreatedAt()));
-        body.put("updatedAt", toIsoString(order.getUpdatedAt()));
-        body.put("companyId", order.hasCompanyId() ? order.getCompanyId() : "");
-        body.put("totalAmount", order.getTotalAmount());
-        return body;
-    }
-
-    private Map<String, Object> mapAddress(Address address) {
-        return Map.of(
-                "addressId", address.getAddressId(),
-                "type", address.getType().name(),
-                "city", address.getCity(),
-                "street", address.getStreet(),
-                "house", address.getHouse(),
-                "apartment", address.hasApartment() ? address.getApartment() : "",
-                "entrance", address.hasEntrance() ? address.getEntrance() : "",
-                "latitude", address.getLatitude(),
-                "longitude", address.getLongitude()
-        );
-    }
-
-    private Map<String, Object> mapContact(ContactInfo contact) {
-        return Map.of(
-                "contactId", contact.getContactId(),
-                "name", contact.getName(),
-                "surname", contact.hasSurname() ? contact.getSurname() : "",
-                "phone", contact.getPhone()
-        );
-    }
-
-    private String toIsoString(Timestamp timestamp) {
-        return java.time.Instant
-                .ofEpochSecond(timestamp.getSeconds(), timestamp.getNanos())
-                .toString();
+    private Instant toInstant(Timestamp value) {
+        return Instant.ofEpochSecond(value.getSeconds(), value.getNanos());
     }
 
     // ── Error handling ────────────────────────────────────────────────────────

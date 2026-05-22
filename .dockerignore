@@ -1,0 +1,9 @@
+.git
+.idea
+.vscode
+**/.env
+**/bin
+**/target
+**/*.iml
+logs
+**/logs

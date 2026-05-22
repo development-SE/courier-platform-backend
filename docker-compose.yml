@@ -1,53 +1,311 @@
-version: "3.9"
+x-app-common: &app-common
+  restart: unless-stopped
+  networks:
+    - courier-network
 
 services:
   postgres:
-    image: postgis/postgis:16-3.5   # ← PostGIS already included
+    image: postgis/postgis:16-3.5
     container_name: courier-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER:     courier_master
-      POSTGRES_PASSWORD: secret_master
-      POSTGRES_DB:       postgres          # default DB (not used by services)
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      AUTH_DB_NAME: ${AUTH_DB_NAME}
+      AUTH_DB_USERNAME: ${AUTH_DB_USERNAME}
+      AUTH_DB_PASSWORD: ${AUTH_DB_PASSWORD}
+      USER_DB_NAME: ${USER_DB_NAME}
+      USER_DB_USERNAME: ${USER_DB_USERNAME}
+      USER_DB_PASSWORD: ${USER_DB_PASSWORD}
+      COMPANY_DB_NAME: ${COMPANY_DB_NAME}
+      COMPANY_DB_USERNAME: ${COMPANY_DB_USERNAME}
+      COMPANY_DB_PASSWORD: ${COMPANY_DB_PASSWORD}
+      LOGISTICS_DB_NAME: ${LOGISTICS_DB_NAME}
+      LOGISTICS_DB_USERNAME: ${LOGISTICS_DB_USERNAME}
+      LOGISTICS_DB_PASSWORD: ${LOGISTICS_DB_PASSWORD}
+      ORDER_DB_NAME: ${ORDER_DB_NAME}
+      ORDER_DB_USERNAME: ${ORDER_DB_USERNAME}
+      ORDER_DB_PASSWORD: ${ORDER_DB_PASSWORD}
+      NOTIFICATION_DB_NAME: ${NOTIFICATION_DB_NAME}
+      NOTIFICATION_DB_USERNAME: ${NOTIFICATION_DB_USERNAME}
+      NOTIFICATION_DB_PASSWORD: ${NOTIFICATION_DB_PASSWORD}
     ports:
-      - "55433:5432"
+      - "${POSTGRES_HOST_PORT}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-      # 1. Init script to create all DBs + users
-      - ./docker/postgres/init-multiple-dbs.sh:/docker-entrypoint-initdb.d/init-dbs.sh
-      # 2. Optional: SQL dumps / extensions
-      # - ./docker/postgres/extensions.sql:/docker-entrypoint-initdb.d/02-extensions.sql
+      - ./docker/postgres/init-multiple-dbs.sh:/docker-entrypoint-initdb.d/init-dbs.sh:ro
     healthcheck:
-      test: ["CMD", "pg_isready", "-U", "courier_master", "-d", "postgres"]
+      test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER}", "-d", "${POSTGRES_DB}"]
       interval: 5s
       timeout: 3s
-      retries: 5
+      retries: 10
+    networks:
+      - courier-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: courier-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT}:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - courier-network
+
   kafka:
     image: confluentinc/cp-kafka:7.6.0
     container_name: courier-kafka
+    restart: unless-stopped
     ports:
-      - "9092:9092"
-      - "9093:9093"
-      - "29092:29092"   # host access
+      - "${KAFKA_PORT}:9092"
+      - "${KAFKA_CONTROLLER_PORT}:9093"
+      - "${KAFKA_EXTERNAL_PORT}:29092"
     environment:
       KAFKA_NODE_ID: 1
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT'
-      KAFKA_LISTENERS: 'PLAINTEXT://0.0.0.0:9092,PLAINTEXT_HOST://0.0.0.0:29092,CONTROLLER://0.0.0.0:9093'
-      KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092'
-      KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
-      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka:9093'
-      KAFKA_PROCESS_ROLES: 'broker,controller'
-      KAFKA_INTER_BROKER_LISTENER_NAME: 'PLAINTEXT'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT"
+      KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:9092,PLAINTEXT_HOST://0.0.0.0:29092,CONTROLLER://0.0.0.0:9093"
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:${KAFKA_EXTERNAL_PORT}"
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:9093"
+      KAFKA_PROCESS_ROLES: "broker,controller"
+      KAFKA_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-      CLUSTER_ID: 'MkU3OEVBNTcwNTJEMVVTNQ=='
+      CLUSTER_ID: "MkU3OEVBNTcwNTJEMVVTNQ=="
     healthcheck:
-      test: [ "CMD", "kafka-topics", "--bootstrap-server", "localhost:9092", "--list" ]
+      test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:9092", "--list"]
       interval: 10s
       timeout: 5s
       retries: 10
+    networks:
+      - courier-network
+
+  eureka-server:
+    <<: *app-common
+    container_name: courier-eureka-server
+    build:
+      context: .
+      dockerfile: eureka-server/Dockerfile
+    environment:
+      EUREKA_SERVER_PORT: ${EUREKA_SERVER_PORT}
+      EUREKA_SERVER_NAME: ${EUREKA_SERVER_NAME}
+      EUREKA_HOST: ${EUREKA_HOST}
+      EUREKA_SELF_URL: ${EUREKA_SELF_URL}
+    ports:
+      - "${EUREKA_SERVER_PORT}:${EUREKA_SERVER_PORT}"
+
+  auth-service:
+    <<: *app-common
+    container_name: courier-auth-service
+    build:
+      context: .
+      dockerfile: auth-service/Dockerfile
+    environment:
+      AUTH_SERVICE_PORT: ${AUTH_SERVICE_PORT}
+      AUTH_SERVICE_NAME: ${AUTH_SERVICE_NAME}
+      AUTH_GRPC_PORT: ${AUTH_GRPC_PORT}
+      AUTH_DB_URL: ${AUTH_DB_URL}
+      AUTH_DB_USERNAME: ${AUTH_DB_USERNAME}
+      AUTH_DB_PASSWORD: ${AUTH_DB_PASSWORD}
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS}
+      NOTIFICATION_KAFKA_TOPIC: ${NOTIFICATION_KAFKA_TOPIC}
+      JWT_SECRET: ${JWT_SECRET}
+      EUREKA_DEFAULT_ZONE: ${EUREKA_DEFAULT_ZONE}
+      API_BASE_URL: ${API_BASE_URL}
+      API_VERIFY_PATH: ${API_VERIFY_PATH}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      eureka-server:
+        condition: service_started
+    ports:
+      - "${AUTH_GRPC_PORT}:${AUTH_GRPC_PORT}"
+
+  user-service:
+    <<: *app-common
+    container_name: courier-user-service
+    build:
+      context: .
+      dockerfile: user-service/Dockerfile
+    environment:
+      USER_SERVICE_PORT: ${USER_SERVICE_PORT}
+      USER_SERVICE_NAME: ${USER_SERVICE_NAME}
+      USER_DB_URL: ${USER_DB_URL}
+      USER_DB_USERNAME: ${USER_DB_USERNAME}
+      USER_DB_PASSWORD: ${USER_DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      EUREKA_DEFAULT_ZONE: ${EUREKA_DEFAULT_ZONE}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      eureka-server:
+        condition: service_started
+    ports:
+      - "${USER_SERVICE_PORT}:${USER_SERVICE_PORT}"
+
+  company-service:
+    <<: *app-common
+    container_name: courier-company-service
+    build:
+      context: .
+      dockerfile: companyservice/Dockerfile
+    environment:
+      COMPANY_SERVICE_PORT: ${COMPANY_SERVICE_PORT}
+      COMPANY_SERVICE_NAME: ${COMPANY_SERVICE_NAME}
+      COMPANY_DB_URL: ${COMPANY_DB_URL}
+      COMPANY_DB_USERNAME: ${COMPANY_DB_USERNAME}
+      COMPANY_DB_PASSWORD: ${COMPANY_DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      EUREKA_DEFAULT_ZONE: ${EUREKA_DEFAULT_ZONE}
+      AUTH_GRPC_ADDRESS: ${AUTH_GRPC_ADDRESS}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      eureka-server:
+        condition: service_started
+    ports:
+      - "${COMPANY_SERVICE_PORT}:${COMPANY_SERVICE_PORT}"
+
+  logistics-service:
+    <<: *app-common
+    container_name: courier-logistics-service
+    build:
+      context: .
+      dockerfile: logistics-service/Dockerfile
+    environment:
+      LOGISTICS_SERVICE_PORT: ${LOGISTICS_SERVICE_PORT}
+      LOGISTICS_SERVICE_NAME: ${LOGISTICS_SERVICE_NAME}
+      LOGISTICS_DB_URL: ${LOGISTICS_DB_URL}
+      LOGISTICS_DB_USERNAME: ${LOGISTICS_DB_USERNAME}
+      LOGISTICS_DB_PASSWORD: ${LOGISTICS_DB_PASSWORD}
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS}
+      EUREKA_DEFAULT_ZONE: ${EUREKA_DEFAULT_ZONE}
+      ORDER_GRPC_ADDRESS: ${ORDER_GRPC_ADDRESS}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      eureka-server:
+        condition: service_started
+    ports:
+      - "${LOGISTICS_SERVICE_PORT}:${LOGISTICS_SERVICE_PORT}"
+
+  notification-service:
+    <<: *app-common
+    container_name: courier-notification-service
+    build:
+      context: .
+      dockerfile: notification/Dockerfile
+    environment:
+      NOTIFICATION_SERVICE_PORT: ${NOTIFICATION_SERVICE_PORT}
+      NOTIFICATION_SERVICE_NAME: ${NOTIFICATION_SERVICE_NAME}
+      NOTIFICATION_DB_URL: ${NOTIFICATION_DB_URL}
+      NOTIFICATION_DB_USERNAME: ${NOTIFICATION_DB_USERNAME}
+      NOTIFICATION_DB_PASSWORD: ${NOTIFICATION_DB_PASSWORD}
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS}
+      EUREKA_DEFAULT_ZONE: ${EUREKA_DEFAULT_ZONE}
+      NOTIFICATION_KAFKA_TOPIC: ${NOTIFICATION_KAFKA_TOPIC}
+      NOTIFICATION_DLT_TOPIC: ${NOTIFICATION_DLT_TOPIC}
+      MAIL_HOST: ${MAIL_HOST}
+      MAIL_PORT: ${MAIL_PORT}
+      MAIL_USERNAME: ${MAIL_USERNAME}
+      MAIL_PASSWORD: ${MAIL_PASSWORD}
+      MAIL_FROM: ${MAIL_FROM}
+      FIREBASE_ENABLED: ${FIREBASE_ENABLED}
+      FIREBASE_CREDENTIALS_PATH: ${FIREBASE_CREDENTIALS_PATH}
+      EXPO_PUSH_URL: ${EXPO_PUSH_URL}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      eureka-server:
+        condition: service_started
+    ports:
+      - "${NOTIFICATION_SERVICE_PORT}:${NOTIFICATION_SERVICE_PORT}"
+
+  order-service:
+    <<: *app-common
+    container_name: courier-order-service
+    build:
+      context: .
+      dockerfile: order-service/Dockerfile
+    environment:
+      ORDER_SERVICE_PORT: ${ORDER_SERVICE_PORT}
+      ORDER_SERVICE_NAME: ${ORDER_SERVICE_NAME}
+      ORDER_GRPC_PORT: ${ORDER_GRPC_PORT}
+      ORDER_DB_URL: ${ORDER_DB_URL}
+      ORDER_DB_USERNAME: ${ORDER_DB_USERNAME}
+      ORDER_DB_PASSWORD: ${ORDER_DB_PASSWORD}
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS}
+      EUREKA_DEFAULT_ZONE: ${EUREKA_DEFAULT_ZONE}
+      ORDER_EVENTS_TOPIC: ${ORDER_EVENTS_TOPIC}
+      NOTIFICATION_KAFKA_TOPIC: ${NOTIFICATION_KAFKA_TOPIC}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      eureka-server:
+        condition: service_started
+    ports:
+      - "${ORDER_GRPC_PORT}:${ORDER_GRPC_PORT}"
+
+  api-gateway:
+    <<: *app-common
+    container_name: courier-api-gateway
+    build:
+      context: .
+      dockerfile: api-gateway/Dockerfile
+    environment:
+      API_GATEWAY_PORT: ${API_GATEWAY_PORT}
+      API_GATEWAY_SERVICE_NAME: ${API_GATEWAY_SERVICE_NAME}
+      USER_SERVICE_URL: ${USER_SERVICE_URL}
+      COMPANY_SERVICE_URL: ${COMPANY_SERVICE_URL}
+      LOGISTICS_SERVICE_URL: ${LOGISTICS_SERVICE_URL}
+      NOTIFICATION_SERVICE_URL: ${NOTIFICATION_SERVICE_URL}
+      REDIS_URL: ${REDIS_URL}
+      EUREKA_DEFAULT_ZONE: ${EUREKA_DEFAULT_ZONE}
+      AUTH_GRPC_ADDRESS: ${AUTH_GRPC_ADDRESS}
+      ORDER_GRPC_ADDRESS: ${ORDER_GRPC_ADDRESS}
+      JWT_SECRET: ${JWT_SECRET}
+    depends_on:
+      redis:
+        condition: service_healthy
+      eureka-server:
+        condition: service_started
+      auth-service:
+        condition: service_started
+      user-service:
+        condition: service_started
+      company-service:
+        condition: service_started
+      logistics-service:
+        condition: service_started
+      notification-service:
+        condition: service_started
+      order-service:
+        condition: service_started
+    ports:
+      - "${API_GATEWAY_PORT}:${API_GATEWAY_PORT}"
 
 volumes:
   pgdata:
+  redisdata:
+
+networks:
+  courier-network:
+    driver: bridge
