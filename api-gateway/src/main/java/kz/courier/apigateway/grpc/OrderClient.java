@@ -19,6 +19,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import java.time.Instant;
+import java.time.OffsetDateTime;
 
 /**
  * gRPC client facade for the order-service.
@@ -260,6 +262,35 @@ public class OrderClient {
         }
     }
 
+    public ApiResponse<Map<String, Object>> getDeliveryConfirmationCode(String orderId, AuthContext auth) {
+        try {
+            log.info("gRPC GetDeliveryConfirmationCode request for id: {}", orderId);
+
+            GetDeliveryConfirmationCodeResponse grpcResponse = authStub(auth).getDeliveryConfirmationCode(
+                    GetDeliveryConfirmationCodeRequest.newBuilder()
+                            .setOrderId(orderId)
+                            .build());
+
+            if (grpcResponse.hasResponse() && !grpcResponse.getResponse().getSuccess()) {
+                return ApiResponse.error(
+                        grpcResponse.getResponse().getError().getCode(),
+                        grpcResponse.getResponse().getError().getMessage()
+                );
+            }
+
+            return ApiResponse.success(Map.of(
+                    "confirmationCode", grpcResponse.getConfirmationCode(),
+                    "expiresAt", toInstant(grpcResponse.getExpiresAt()),
+                    "attemptsRemaining", grpcResponse.getAttemptsRemaining()
+            ));
+        } catch (StatusRuntimeException e) {
+            return handleGrpcError(e);
+        } catch (Exception e) {
+            log.error("Unexpected error getting delivery confirmation code", e);
+            return ApiResponse.error("INTERNAL_ERROR", "An unexpected error occurred");
+        }
+    }
+
     private Timestamp toTimestamp(OffsetDateTime value) {
         var instant = value.toInstant();
         return Timestamp.newBuilder()
@@ -290,6 +321,9 @@ public class OrderClient {
 
         if (grpcResponse.hasCompanyId()) {
             data.put("companyId", grpcResponse.getCompanyId());
+        }
+        if (grpcResponse.hasDeliveryConfirmationCode()) {
+            data.put("deliveryConfirmationCode", grpcResponse.getDeliveryConfirmationCode());
         }
 
         Instant createdAt = toInstantOrNull(grpcResponse.getCreatedAt());

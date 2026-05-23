@@ -8,11 +8,18 @@ import kz.courier.order.v1.GetOrderRequest;
 import kz.courier.order.v1.GetOrderResponse;
 import kz.courier.order.v1.OrderServiceGrpc;
 import kz.courier.order.v1.OrderStatus;
+import kz.courier.order.v1.ResendDeliveryConfirmationCodeRequest;
+import kz.courier.order.v1.ResendDeliveryConfirmationCodeResponse;
+import kz.courier.order.v1.VerifyDeliveryCodeRequest;
+import kz.courier.order.v1.VerifyDeliveryCodeResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.devh.boot.grpc.client.inject.GrpcClient;
 import org.springframework.stereotype.Component;
 
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.UUID;
 
 /**
@@ -71,6 +78,64 @@ public class OrderGrpcClient {
         }
     }
 
+    /**
+     * Verifies the customer OTP in order-service. Logistics calls this from the
+     * assignment endpoint so the assigned-courier authorization remains tied to
+     * the assignment lifecycle.
+     */
+    public OrderStatus verifyDeliveryCode(UUID orderId, String confirmationCode) {
+        GatewayPrincipalProvider.GatewayPrincipal principal =
+                gatewayPrincipalProvider.requireCurrentPrincipal();
+
+        try {
+            VerifyDeliveryCodeResponse response = authenticatedStub(principal).verifyDeliveryCode(
+                    VerifyDeliveryCodeRequest.newBuilder()
+                            .setOrderId(orderId.toString())
+                            .setConfirmationCode(confirmationCode != null ? confirmationCode : "")
+                            .build());
+
+            if (response.hasResponse() && !response.getResponse().getSuccess()) {
+                String code = response.getResponse().getError().getCode();
+                String message = response.getResponse().getError().getMessage();
+                throw new BusinessException(code != null ? code : "ORDER_SERVICE_ERROR",
+                        message != null ? message : "order-service rejected delivery code");
+            }
+
+            return response.getCurrentStatus();
+        } catch (StatusRuntimeException ex) {
+            throw mapGrpcError(orderId, ex);
+        }
+    }
+
+    public ResendDeliveryCodeResult resendDeliveryConfirmationCode(UUID orderId) {
+        GatewayPrincipalProvider.GatewayPrincipal principal =
+                gatewayPrincipalProvider.requireCurrentPrincipal();
+
+        try {
+            ResendDeliveryConfirmationCodeResponse response =
+                    authenticatedStub(principal).resendDeliveryConfirmationCode(
+                            ResendDeliveryConfirmationCodeRequest.newBuilder()
+                                    .setOrderId(orderId.toString())
+                                    .build());
+
+            if (response.hasResponse() && !response.getResponse().getSuccess()) {
+                String code = response.getResponse().getError().getCode();
+                String message = response.getResponse().getError().getMessage();
+                throw new BusinessException(code != null ? code : "ORDER_SERVICE_ERROR",
+                        message != null ? message : "order-service rejected resend request");
+            }
+
+            return new ResendDeliveryCodeResult(
+                    response.getCurrentStatus(),
+                    Instant.ofEpochSecond(
+                            response.getCodeExpiresAt().getSeconds(),
+                            response.getCodeExpiresAt().getNanos()).atOffset(ZoneOffset.UTC),
+                    response.getRegenerated());
+        } catch (StatusRuntimeException ex) {
+            throw mapGrpcError(orderId, ex);
+        }
+    }
+
     private OrderServiceGrpc.OrderServiceBlockingStub authenticatedStub(
             GatewayPrincipalProvider.GatewayPrincipal principal) {
         return orderStub.withInterceptors(
@@ -110,5 +175,11 @@ public class OrderGrpcClient {
             double pickupLatitude,
             double pickupLongitude,
             String pickupAddressLabel
+    ) {}
+
+    public record ResendDeliveryCodeResult(
+            OrderStatus status,
+            OffsetDateTime expiresAt,
+            boolean regenerated
     ) {}
 }

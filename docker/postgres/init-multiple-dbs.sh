@@ -1,79 +1,47 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
-# This script runs **once** when the container is first created.
-# PostgreSQL calls every *.sh in /docker-entrypoint-initdb.d alphabetically.
+create_user_and_db() {
+  local db_name="$1"
+  local db_user="$2"
+  local db_password="$3"
 
-psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
-
-<<<<<<< Updated upstream
-  ----------------------------------------------------------------
-  -- 1. Create one role per microservice (least-privilege)
-  ----------------------------------------------------------------
-  CREATE ROLE auth_svc LOGIN PASSWORD 'auth_secret';
-  CREATE ROLE user_svc LOGIN PASSWORD 'user_secret';
-  CREATE ROLE catalog_svc LOGIN PASSWORD 'catalog_secret';
-  CREATE ROLE order_svc LOGIN PASSWORD 'order_secret';
-  CREATE ROLE payment_svc LOGIN PASSWORD 'payment_secret';
-  CREATE ROLE admin_svc LOGIN PASSWORD 'admin_secret';
-  CREATE ROLE courier_svc LOGIN PASSWORD 'courier_secret';
-  CREATE ROLE company_svc LOGIN PASSWORD 'company_secret';
-  CREATE ROLE logistics_svc LOGIN PASSWORD 'logistics_secret';
-=======
-ALTER ROLE ${db_user} WITH LOGIN PASSWORD '${db_password}';
+  psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<EOSQL
+DO \$\$
+BEGIN
+  IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = '${db_user}') THEN
+    CREATE ROLE ${db_user} LOGIN PASSWORD '${db_password}';
+  END IF;
+END
+\$\$;
 
 SELECT 'CREATE DATABASE ${db_name} OWNER ${db_user}'
 WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '${db_name}')\gexec
->>>>>>> Stashed changes
 
-  ----------------------------------------------------------------
-  -- 2. Create dedicated database per service
-  ----------------------------------------------------------------
-  CREATE DATABASE auth_db     OWNER auth_svc     ENCODING 'UTF8' LC_COLLATE 'en_US.utf8' LC_CTYPE 'en_US.utf8';
-  CREATE DATABASE user_db     OWNER user_svc;
-  CREATE DATABASE catalog_db  OWNER catalog_svc;
-  CREATE DATABASE order_db    OWNER order_svc;
-  CREATE DATABASE payment_db  OWNER payment_svc;
-  CREATE DATABASE admin_db    OWNER admin_svc;
-  CREATE DATABASE courier_db  OWNER courier_svc;
-  CREATE DATABASE company_db OWNER company_svc ENCODING 'UTF8';
-  CREATE DATABASE logistics_db OWNER logistics_svc;
-
-  ----------------------------------------------------------------
-  -- 3. Grant CONNECT + extensions
-  ----------------------------------------------------------------
-  GRANT CONNECT ON DATABASE auth_db     TO auth_svc;
-  GRANT CONNECT ON DATABASE user_db     TO user_svc;
-  GRANT CONNECT ON DATABASE catalog_db  TO catalog_svc;
-  GRANT CONNECT ON DATABASE order_db    TO order_svc;
-  GRANT CONNECT ON DATABASE payment_db  TO payment_svc;
-  GRANT CONNECT ON DATABASE admin_db    TO admin_svc;
-  GRANT CONNECT ON DATABASE courier_db  TO courier_svc;
-  GRANT CONNECT ON DATABASE company_db TO company_svc;
-  GRANT CONNECT ON DATABASE logistics_db TO logistics_svc;
-
-  -- Enable useful extensions in every DB
-  \c auth_db
-  CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-  CREATE EXTENSION IF NOT EXISTS "pgcrypto";
-
-  \c catalog_db
-  CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-
-  \c company_db
-  CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-
-  \c order_db
-  CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-  CREATE EXTENSION IF NOT EXISTS postgis;
-  CREATE EXTENSION IF NOT EXISTS earthdistance CASCADE;
-  CREATE EXTENSION IF NOT EXISTS "btree_gist";   -- for time-range queries
-
-  \c logistics_db
-  CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-  CREATE EXTENSION IF NOT EXISTS postgis;
-  CREATE EXTENSION IF NOT EXISTS "btree_gist";
-
-  -- … repeat for others if needed
-
+GRANT CONNECT ON DATABASE ${db_name} TO ${db_user};
 EOSQL
+}
+
+enable_extensions() {
+  local db_name="$1"
+  shift
+
+  for extension in "$@"; do
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$db_name" \
+      -c "CREATE EXTENSION IF NOT EXISTS ${extension};"
+  done
+}
+
+create_user_and_db "$AUTH_DB_NAME" "$AUTH_DB_USERNAME" "$AUTH_DB_PASSWORD"
+create_user_and_db "$USER_DB_NAME" "$USER_DB_USERNAME" "$USER_DB_PASSWORD"
+create_user_and_db "$ORDER_DB_NAME" "$ORDER_DB_USERNAME" "$ORDER_DB_PASSWORD"
+create_user_and_db "$COMPANY_DB_NAME" "$COMPANY_DB_USERNAME" "$COMPANY_DB_PASSWORD"
+create_user_and_db "$LOGISTICS_DB_NAME" "$LOGISTICS_DB_USERNAME" "$LOGISTICS_DB_PASSWORD"
+create_user_and_db "$NOTIFICATION_DB_NAME" "$NOTIFICATION_DB_USERNAME" "$NOTIFICATION_DB_PASSWORD"
+
+enable_extensions "$AUTH_DB_NAME" '"uuid-ossp"' '"pgcrypto"'
+enable_extensions "$USER_DB_NAME" '"uuid-ossp"'
+enable_extensions "$ORDER_DB_NAME" '"uuid-ossp"' postgis 'earthdistance CASCADE' '"btree_gist"'
+enable_extensions "$COMPANY_DB_NAME" '"uuid-ossp"'
+enable_extensions "$LOGISTICS_DB_NAME" '"uuid-ossp"' postgis '"btree_gist"'
+enable_extensions "$NOTIFICATION_DB_NAME" '"uuid-ossp"'

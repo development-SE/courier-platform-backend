@@ -1,11 +1,14 @@
+server:
+  port: ${AUTH_SERVICE_PORT:8081}
+
 # auth-service/src/main/resources/application.yml
 spring:
   application:
-    name: auth-service
+    name: ${AUTH_SERVICE_NAME:auth-service}
   datasource:
-    url: jdbc:postgresql://localhost:5433/auth_db
-    username: auth_svc
-    password: auth_secret
+    url: ${AUTH_DB_URL:jdbc:postgresql://localhost:5433/auth_db}
+    username: ${AUTH_DB_USERNAME:auth_svc}
+    password: ${AUTH_DB_PASSWORD:auth_secret}
     driver-class-name: org.postgresql.Driver
   jpa:
     hibernate:
@@ -15,7 +18,7 @@ spring:
     locations: classpath:db/migration
     baseline-on-migrate: true
   kafka:
-    bootstrap-servers: localhost:29092
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:29092}
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
@@ -29,11 +32,11 @@ spring:
   main:
     web-application-type: none
 
-notification-kafka-topic: notification-kafka-topic
+notification-kafka-topic: ${NOTIFICATION_KAFKA_TOPIC:notification-kafka-topic}
 
 grpc:
   server:
-    port: 9091
+    port: ${AUTH_GRPC_PORT:9091}
 
 jwt:
   secret: ${JWT_SECRET:my-super-secret-key-at-least-32chars!!}
@@ -49,7 +52,7 @@ jwt:
 eureka:
   client:
     service-url:
-      defaultZone: http://localhost:8761/eureka/  # Eureka Server address
+      defaultZone: ${EUREKA_DEFAULT_ZONE:http://localhost:8761/eureka/}
     fetch-registry: true  # Download registry of other services
     register-with-eureka: true  # Register this service with Eureka
   instance:
@@ -84,5 +87,7 @@ logging:
 
 
 ## external url paths
-API_BASE_URL: http://localhost:8080/
-API_VERIFY_PATH: api/v1/auth/verify
+app:
+  api:
+    base-url: ${API_BASE_URL:http://localhost:8080/}
+    verify-path: ${API_VERIFY_PATH:api/v1/auth/verify}

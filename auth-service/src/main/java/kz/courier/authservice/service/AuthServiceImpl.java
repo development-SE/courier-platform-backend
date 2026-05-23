@@ -61,9 +61,9 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final NotificationProducer notificationProducer;
-    @Value("${API_BASE_URL}")
+    @Value("${app.api.base-url}")
     private String apiBaseUrl;
-    @Value("${API_VERIFY_PATH}")
+    @Value("${app.api.verify-path}")
     private String apiVerifyPath;
 
     @Override

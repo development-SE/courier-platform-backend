@@ -8,6 +8,8 @@ import kz.courier.common.v1.Error;
 import kz.courier.common.v1.PaginationResponse;
 import kz.courier.common.v1.Response;
 import kz.courier.order.v1.*;
+import kz.courier.orderservice.dto.DeliveryConfirmationCodeView;
+import kz.courier.orderservice.dto.DeliveryConfirmationIssueResult;
 import kz.courier.orderservice.dto.OrderFilter;
 import kz.courier.orderservice.exception.OrderNotFoundException;
 import kz.courier.orderservice.exception.OrderServiceException;
@@ -64,6 +66,7 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
     private final AddressRepository addressRepository;
     private final ContactRepository contactRepository;
     private final ObjectMapper      objectMapper;
+    private final DeliveryConfirmationService deliveryConfirmationService;
 
     // ─────────────────────────────────────────────────────────────────────────
     //  CreateOrder
@@ -172,6 +175,9 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
             authorizeOrderRead(caller, order);
 
             GetOrderResponse body = OrderMapper.toGetOrderResponse(order, objectMapper);
+            if (order.getStatus() == kz.courier.orderservice.model.OrderStatus.DELIVERY_CONFIRMATION_PENDING) {
+                body = attachDeliveryConfirmationCodeIfAllowed(body, id, caller);
+            }
             // Attach the success wrapper
             send(responseObserver,
                     body.toBuilder().setResponse(successResponse()).build());
@@ -231,6 +237,16 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
             kz.courier.orderservice.model.OrderStatus newStatus =
                     kz.courier.orderservice.model.OrderStatus.valueOf(protoStatus.name());
             authorizeStatusChange(caller, order, newStatus);
+
+            if (newStatus == kz.courier.orderservice.model.OrderStatus.DELIVERY_CONFIRMATION_PENDING
+                    || newStatus == kz.courier.orderservice.model.OrderStatus.DELIVERED) {
+                send(responseObserver,
+                        UpdateOrderStatusResponse.newBuilder()
+                                .setResponse(errorResponse("DEDICATED_FLOW_REQUIRED",
+                                        "Use logistics assignment arrival and OTP verification flow"))
+                                .build());
+                return;
+            }
 
             // Guard terminal statuses
             if (order.getStatus() == kz.courier.orderservice.model.OrderStatus.DELIVERED
@@ -345,6 +361,191 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    //  Delivery confirmation
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Admin-only escape hatch for issuing a delivery OTP directly from
+     * order-service. The normal production path is event-driven: courier marks
+     * assignment ARRIVED in logistics-service, then order-service consumes the
+     * assignment event and issues OTP.
+     */
+    @Override
+    @Transactional
+    public void confirmArrival(ConfirmArrivalRequest request,
+                               StreamObserver<ConfirmArrivalResponse> responseObserver) {
+        try {
+            AuthenticatedUser caller = requireAuthenticatedUser();
+            UUID orderId = UUID.fromString(request.getOrderId());
+            log.info("[gRPC] confirmArrival orderId={} caller={}", orderId, caller.userId());
+
+            DeliveryConfirmationIssueResult result =
+                    deliveryConfirmationService.confirmArrival(orderId, caller);
+
+            send(responseObserver,
+                    ConfirmArrivalResponse.newBuilder()
+                            .setResponse(successResponse())
+                            .setCurrentStatus(kz.courier.order.v1.OrderStatus.valueOf(result.status().name()))
+                            .setCodeExpiresAt(toTimestamp(result.expiresAt()))
+                            .build());
+        } catch (OrderNotFoundException e) {
+            send(responseObserver,
+                    ConfirmArrivalResponse.newBuilder()
+                            .setResponse(errorResponse("ORDER_NOT_FOUND", e.getMessage()))
+                            .build());
+        } catch (IllegalArgumentException e) {
+            send(responseObserver,
+                    ConfirmArrivalResponse.newBuilder()
+                            .setResponse(errorResponse("INVALID_ARGUMENT", e.getMessage()))
+                            .build());
+        } catch (OrderServiceException e) {
+            log.warn("[gRPC] confirmArrival rejected: {}", e.getMessage());
+            send(responseObserver,
+                    ConfirmArrivalResponse.newBuilder()
+                            .setResponse(errorResponse(e.getCode(), e.getMessage()))
+                            .build());
+        } catch (Exception e) {
+            log.error("[gRPC] confirmArrival error", e);
+            responseObserver.onError(Status.INTERNAL.withDescription("Internal error").asRuntimeException());
+        }
+    }
+
+    /**
+     * Verifies courier-entered OTP. In the public API this is called through
+     * logistics-service, which owns assignment authorization. Successful
+     * verification is the only path from DELIVERY_CONFIRMATION_PENDING to
+     * DELIVERED.
+     */
+    @Override
+    @Transactional
+    public void verifyDeliveryCode(VerifyDeliveryCodeRequest request,
+                                   StreamObserver<VerifyDeliveryCodeResponse> responseObserver) {
+        try {
+            AuthenticatedUser caller = requireAuthenticatedUser();
+            UUID orderId = UUID.fromString(request.getOrderId());
+            log.info("[gRPC] verifyDeliveryCode orderId={} caller={}", orderId, caller.userId());
+
+            kz.courier.orderservice.model.OrderStatus status =
+                    deliveryConfirmationService.verifyCode(
+                            orderId, request.getConfirmationCode(), caller);
+
+            send(responseObserver,
+                    VerifyDeliveryCodeResponse.newBuilder()
+                            .setResponse(successResponse())
+                            .setCurrentStatus(kz.courier.order.v1.OrderStatus.valueOf(status.name()))
+                            .build());
+        } catch (IllegalArgumentException e) {
+            send(responseObserver,
+                    VerifyDeliveryCodeResponse.newBuilder()
+                            .setResponse(errorResponse("INVALID_ARGUMENT", e.getMessage()))
+                            .build());
+        } catch (OrderServiceException e) {
+            log.warn("[gRPC] verifyDeliveryCode rejected: {}", e.getMessage());
+            send(responseObserver,
+                    VerifyDeliveryCodeResponse.newBuilder()
+                            .setResponse(errorResponse(e.getCode(), e.getMessage()))
+                            .build());
+        } catch (Exception e) {
+            log.error("[gRPC] verifyDeliveryCode error", e);
+            responseObserver.onError(Status.INTERNAL.withDescription("Internal error").asRuntimeException());
+        }
+    }
+
+    /**
+     * Fallback API for customer apps: returns the active OTP only to the order
+     * owner while the order is waiting for delivery confirmation.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public void getDeliveryConfirmationCode(GetDeliveryConfirmationCodeRequest request,
+                                            StreamObserver<GetDeliveryConfirmationCodeResponse> responseObserver) {
+        try {
+            AuthenticatedUser caller = requireAuthenticatedUser();
+            UUID orderId = UUID.fromString(request.getOrderId());
+            log.info("[gRPC] getDeliveryConfirmationCode orderId={} caller={}",
+                    orderId, caller.userId());
+
+            DeliveryConfirmationCodeView view =
+                    deliveryConfirmationService.getCodeForCustomer(orderId, caller);
+
+            send(responseObserver,
+                    GetDeliveryConfirmationCodeResponse.newBuilder()
+                            .setResponse(successResponse())
+                            .setConfirmationCode(view.code())
+                            .setExpiresAt(toTimestamp(view.expiresAt()))
+                            .setAttemptsRemaining(view.attemptsRemaining())
+                            .build());
+        } catch (OrderNotFoundException e) {
+            send(responseObserver,
+                    GetDeliveryConfirmationCodeResponse.newBuilder()
+                            .setResponse(errorResponse("ORDER_NOT_FOUND", e.getMessage()))
+                            .build());
+        } catch (IllegalArgumentException e) {
+            send(responseObserver,
+                    GetDeliveryConfirmationCodeResponse.newBuilder()
+                            .setResponse(errorResponse("INVALID_ARGUMENT", e.getMessage()))
+                            .build());
+        } catch (OrderServiceException e) {
+            log.warn("[gRPC] getDeliveryConfirmationCode rejected: {}", e.getMessage());
+            send(responseObserver,
+                    GetDeliveryConfirmationCodeResponse.newBuilder()
+                            .setResponse(errorResponse(e.getCode(), e.getMessage()))
+                            .build());
+        } catch (Exception e) {
+            log.error("[gRPC] getDeliveryConfirmationCode error", e);
+            responseObserver.onError(Status.INTERNAL.withDescription("Internal error").asRuntimeException());
+        }
+    }
+
+    /**
+     * Resends the current OTP or creates a fresh code after expiration.
+     * Assignment authorization is enforced by logistics-service before this RPC
+     * is called through the gateway-authenticated gRPC client.
+     */
+    @Override
+    @Transactional
+    public void resendDeliveryConfirmationCode(ResendDeliveryConfirmationCodeRequest request,
+                                               StreamObserver<ResendDeliveryConfirmationCodeResponse> responseObserver) {
+        try {
+            AuthenticatedUser caller = requireAuthenticatedUser();
+            UUID orderId = UUID.fromString(request.getOrderId());
+            UUID courierId = parseUuid(caller.userId(), "caller userId");
+            log.info("[gRPC] resendDeliveryConfirmationCode orderId={} caller={}",
+                    orderId, caller.userId());
+
+            DeliveryConfirmationIssueResult result =
+                    deliveryConfirmationService.resendCodeFromAssignment(orderId, courierId);
+
+            send(responseObserver,
+                    ResendDeliveryConfirmationCodeResponse.newBuilder()
+                            .setResponse(successResponse())
+                            .setCurrentStatus(kz.courier.order.v1.OrderStatus.valueOf(result.status().name()))
+                            .setCodeExpiresAt(toTimestamp(result.expiresAt()))
+                            .setRegenerated(result.regenerated())
+                            .build());
+        } catch (OrderNotFoundException e) {
+            send(responseObserver,
+                    ResendDeliveryConfirmationCodeResponse.newBuilder()
+                            .setResponse(errorResponse("ORDER_NOT_FOUND", e.getMessage()))
+                            .build());
+        } catch (IllegalArgumentException e) {
+            send(responseObserver,
+                    ResendDeliveryConfirmationCodeResponse.newBuilder()
+                            .setResponse(errorResponse("INVALID_ARGUMENT", e.getMessage()))
+                            .build());
+        } catch (OrderServiceException e) {
+            log.warn("[gRPC] resendDeliveryConfirmationCode rejected: {}", e.getMessage());
+            send(responseObserver,
+                    ResendDeliveryConfirmationCodeResponse.newBuilder()
+                            .setResponse(errorResponse(e.getCode(), e.getMessage()))
+                            .build());
+        } catch (Exception e) {
+            log.error("[gRPC] resendDeliveryConfirmationCode error", e);
+            responseObserver.onError(Status.INTERNAL.withDescription("Internal error").asRuntimeException());
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     //  Helpers
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -373,6 +574,17 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
 
     private Timestamp nowTs() {
         Instant i = Instant.now();
+        return Timestamp.newBuilder()
+                .setSeconds(i.getEpochSecond())
+                .setNanos(i.getNano())
+                .build();
+    }
+
+    private Timestamp toTimestamp(OffsetDateTime value) {
+        if (value == null) {
+            return Timestamp.getDefaultInstance();
+        }
+        Instant i = value.toInstant();
         return Timestamp.newBuilder()
                 .setSeconds(i.getEpochSecond())
                 .setNanos(i.getNano())
@@ -514,6 +726,23 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
         }
         if (!ownUserOrder && !ownCompanyOrder) {
             throw new OrderServiceException("FORBIDDEN", "You do not have access to this order");
+        }
+    }
+
+    private GetOrderResponse attachDeliveryConfirmationCodeIfAllowed(
+            GetOrderResponse body,
+            UUID orderId,
+            AuthenticatedUser caller) {
+        try {
+            DeliveryConfirmationCodeView view =
+                    deliveryConfirmationService.getCodeForCustomer(orderId, caller);
+            return body.toBuilder()
+                    .setDeliveryConfirmationCode(view.code())
+                    .build();
+        } catch (OrderServiceException e) {
+            log.debug("[gRPC] delivery confirmation code not attached orderId={} reason={}",
+                    orderId, e.getCode());
+            return body;
         }
     }
 

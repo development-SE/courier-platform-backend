@@ -50,6 +50,9 @@ class OrderGrpcServiceAuthorizationTests {
     @Mock
     private ContactRepository contactRepository;
 
+    @Mock
+    private DeliveryConfirmationService deliveryConfirmationService;
+
     private OrderGrpcService service;
 
     @BeforeEach
@@ -58,7 +61,8 @@ class OrderGrpcServiceAuthorizationTests {
                 orderRepository,
                 addressRepository,
                 contactRepository,
-                new ObjectMapper()
+                new ObjectMapper(),
+                deliveryConfirmationService
         );
     }
 
