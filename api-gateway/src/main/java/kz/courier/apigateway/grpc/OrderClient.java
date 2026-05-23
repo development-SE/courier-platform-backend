@@ -13,8 +13,6 @@ import lombok.extern.slf4j.Slf4j;
 import net.devh.boot.grpc.client.inject.GrpcClient;
 import org.springframework.stereotype.Service;
 
-import java.time.Instant;
-import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -298,7 +296,6 @@ public class OrderClient {
                 .setNanos(instant.getNano())
                 .build();
     }
-
     private Instant toInstant(Timestamp value) {
         return Instant.ofEpochSecond(value.getSeconds(), value.getNanos());
     }

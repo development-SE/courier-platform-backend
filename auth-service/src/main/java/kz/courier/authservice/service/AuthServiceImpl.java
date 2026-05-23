@@ -622,11 +622,17 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
     }
 
     private Role resolveRegistrationRole(RegisterRequest req, UUID companyId) {
-        if (companyId == null) {
-            return Role.CLIENT;
-        }
 
         Role requestedRole = Role.valueOf(req.getRole().name());
+
+        if (companyId == null) {
+            if (requestedRole == Role.CLIENT || requestedRole == Role.COURIER) {
+                return requestedRole;
+            }
+
+            throw new IllegalArgumentException("Public registration only supports CLIENT or COURIER");
+        }
+
         if (requestedRole == Role.DIRECTOR || requestedRole == Role.MANAGER) {
             return requestedRole;
         }

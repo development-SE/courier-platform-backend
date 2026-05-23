@@ -23,6 +23,7 @@ spring:
             allowedOrigins:
               - "http://localhost:3000"
               - "http://localhost:5173" # Common Vite default
+              - "http://10.202.6.243:8081"
             allowedMethods:
               - GET
               - POST
@@ -37,6 +38,24 @@ spring:
       # ── Routes ────────────────────────────────────────────────────────────
       routes:
         # user-service  →  GET/POST/PUT/DELETE /api/v1/users/**
+        - id: user-service-me
+          uri: lb://user-service
+          predicates:
+            - Path=/api/v1/users/me
+          filters:
+            - name: JwtAuthenticationFilter
+            - name: LoggingFilter
+            - StripPrefix=2
+
+        - id: user-service-my-addresses
+          uri: ${USER_SERVICE_URL:lb://user-service}
+          predicates:
+            - Path=/api/v1/users/me/addresses,/api/v1/users/me/addresses/**
+          filters:
+            - name: JwtAuthenticationFilter
+            - name: LoggingFilter
+            - StripPrefix=2
+
         - id: user-service
           uri: ${USER_SERVICE_URL:lb://user-service}
           predicates:
@@ -109,12 +128,6 @@ spring:
               firstBackoff: 50ms
               maxBackoff: 500ms
               factor: 2
-        - name: RequestRateLimiter
-          args:
-            redis-rate-limiter:
-              replenishRate: 10
-              burstCapacity: 20
-              requestedTokens: 1
         - AddRequestHeader=X-Gateway-Request, GatewayRequest
         - AddResponseHeader=X-Gateway-Response, GatewayResponse
       server:

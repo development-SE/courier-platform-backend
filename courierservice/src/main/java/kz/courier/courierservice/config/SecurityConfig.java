@@ -35,16 +35,17 @@ public class SecurityConfig {
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .addFilterBefore(new GatewayHeaderAuthFilter(), UsernamePasswordAuthenticationFilter.class)
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/actuator/**").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/couriers/*/eligibility").authenticated()
-                        .requestMatchers(HttpMethod.GET, "/couriers/**")
-                            .hasAnyRole("ADMIN", "SUPER_ADMIN", "MANAGER", "DIRECTOR")
-                        .requestMatchers(HttpMethod.POST, "/couriers")
-                            .hasAnyRole("ADMIN", "SUPER_ADMIN")
-                        .requestMatchers(HttpMethod.PUT, "/couriers/**")
-                            .hasAnyRole("ADMIN", "SUPER_ADMIN")
-                        .anyRequest().authenticated()
-                )
+                .requestMatchers("/actuator/**").permitAll()
+                .requestMatchers(HttpMethod.GET, "/couriers/me").authenticated()
+                .requestMatchers(HttpMethod.GET, "/couriers/*/eligibility").authenticated()
+                .requestMatchers(HttpMethod.GET, "/couriers", "/couriers/**")
+                    .hasAnyRole("ADMIN", "SUPER_ADMIN", "MANAGER", "DIRECTOR")
+                .requestMatchers(HttpMethod.POST, "/couriers")
+                    .hasAnyRole("ADMIN", "SUPER_ADMIN", "COURIER")
+                .requestMatchers(HttpMethod.PUT, "/couriers/**")
+                    .hasAnyRole("ADMIN", "SUPER_ADMIN")
+                .anyRequest().authenticated()
+            )
                 .exceptionHandling(ex -> ex.accessDeniedHandler(accessDeniedHandler()));
 
         return http.build();

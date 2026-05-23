@@ -51,6 +51,34 @@ public class UserService {
         return toResponse(findOrThrow(id));
     }
 
+    @PreAuthorize("isAuthenticated()")
+    @Transactional(readOnly = true)
+    public UserDto.Response getCurrentUser(String email, String userId, String role) {
+        if (email == null || email.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "AUTH_REQUIRED: Missing authenticated email");
+        }
+
+        return userRepo.findByEmail(email.trim().toLowerCase())
+                .map(this::toResponse)
+                .orElseGet(() -> buildFallbackProfile(email, userId, role));
+    }
+
+    private UserDto.Response buildFallbackProfile(String email, String userId, String role) {
+        String localPart = email.contains("@") ? email.substring(0, email.indexOf('@')) : email;
+        String firstName = localPart == null || localPart.isBlank() ? "Courier" : localPart;
+
+        return UserDto.Response.builder()
+                .id(parseUuid(userId))
+                .firstName(firstName)
+                .lastName("")
+                .email(email)
+                .phone(null)
+                .companyId(null)
+                .role(parseRole(role))
+                .active(true)
+                .build();
+    }
+
     /* ── LIST + SEARCH + FILTER ─────────────────────────────────────────── */
     @PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN')")
     @Transactional(readOnly = true)
@@ -58,10 +86,15 @@ public class UserService {
         var sort     = Sort.by(asc ? Sort.Direction.ASC : Sort.Direction.DESC, sortBy);
         var pageable = PageRequest.of(page - 1, size, sort);
 
-        // Use search query if any filter is active, otherwise findAll
-        Page<User> result = (search != null || role != null)
-                ? userRepo.search(role, search, pageable)
-                : userRepo.findAll(pageable);
+        String effectiveSearch = search == null || search.isBlank() ? null : search.trim();
+        Page<User> result;
+        if (effectiveSearch != null) {
+            result = userRepo.search(role, effectiveSearch, pageable);
+        } else if (role != null) {
+            result = userRepo.findByRole(role, pageable);
+        } else {
+            result = userRepo.findAll(pageable);
+        }
 
         return UserDto.PageResponse.builder()
                 .content(result.getContent().stream().map(this::toResponse).toList())
@@ -122,5 +155,27 @@ public class UserService {
                 .createdAt(u.getCreatedAt())
                 .updatedAt(u.getUpdatedAt())
                 .build();
+    }
+
+    private Role parseRole(String role) {
+        if (role == null || role.isBlank()) {
+            return Role.USER;
+        }
+        try {
+            return Role.valueOf(role.trim().toUpperCase());
+        } catch (IllegalArgumentException ignored) {
+            return Role.USER;
+        }
+    }
+
+    private UUID parseUuid(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return UUID.fromString(value);
+        } catch (IllegalArgumentException ignored) {
+            return null;
+        }
     }
 }

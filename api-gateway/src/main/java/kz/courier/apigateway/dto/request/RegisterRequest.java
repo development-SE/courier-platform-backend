@@ -35,5 +35,5 @@ public class RegisterRequest {
 
     private Boolean pushConsent = false;
 
-    private String role = "CLIENT";  // Public registration is always CLIENT; privileged roles are created internally.
+    private String role = "CLIENT";  // Public registration may create CLIENT or COURIER only.
 }

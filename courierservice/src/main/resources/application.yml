@@ -6,7 +6,7 @@ spring:
     name: courier-service
 
   datasource:
-    url: jdbc:postgresql://localhost:55433/courier_db
+    url: jdbc:postgresql://127.0.0.1:55433/courier_db
     username: courier_svc
     password: courier_secret
     driver-class-name: org.postgresql.Driver

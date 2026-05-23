@@ -14,6 +14,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.data.domain.Page;
+import kz.courier.courierservice.security.GatewayPrincipalProvider;
 
 import java.time.OffsetDateTime;
 import java.util.UUID;
@@ -24,12 +26,28 @@ import java.util.UUID;
 public class CourierController {
 
     private final CourierService courierService;
+    private final GatewayPrincipalProvider gatewayPrincipalProvider;
 
     @PostMapping
     public ResponseEntity<CourierDto.ApiResponse<CourierDto.CourierProfileResponse>> create(
             @Valid @RequestBody CourierDto.CreateCourierRequest req) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(CourierDto.ApiResponse.ok(courierService.create(req)));
+    }
+
+    @GetMapping("/me")
+    public ResponseEntity<CourierDto.ApiResponse<CourierDto.CourierProfileResponse>> getMe() {
+        UUID userId = gatewayPrincipalProvider.requireCurrentUserId();
+        return ResponseEntity.ok(CourierDto.ApiResponse.ok(courierService.getByUserId(userId)));
+    }
+
+    @GetMapping
+    public ResponseEntity<CourierDto.ApiResponse<Page<CourierDto.CourierProfileResponse>>> list(
+            @RequestParam(required = false) UUID companyId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        return ResponseEntity.ok(CourierDto.ApiResponse.ok(
+                courierService.list(companyId, page, size)));
     }
 
     @GetMapping("/{id}")
