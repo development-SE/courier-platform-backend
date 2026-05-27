@@ -38,8 +38,13 @@ public class AssignmentEventPublisher {
     // ── Assignment created ────────────────────────────────────────────────────
 
     public void publishAssignmentCreated(UUID assignmentId, UUID orderId, UUID courierId) {
+        publishAssignmentCreated(assignmentId, orderId, courierId, AssignmentStatus.ASSIGNED);
+    }
+
+    public void publishAssignmentCreated(UUID assignmentId, UUID orderId, UUID courierId,
+                                         AssignmentStatus assignmentStatus) {
         publish(TOPIC_CREATED, assignmentId.toString(), new AssignmentCreatedEvent(
-                assignmentId, orderId, courierId, OffsetDateTime.now()));
+                assignmentId, orderId, courierId, assignmentStatus, OffsetDateTime.now()));
     }
 
     // ── Status transition ─────────────────────────────────────────────────────
@@ -83,6 +88,7 @@ public class AssignmentEventPublisher {
             UUID assignmentId,
             UUID orderId,
             UUID courierId,
+            AssignmentStatus assignmentStatus,
             OffsetDateTime occurredAt
     ) {}
 

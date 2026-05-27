@@ -1,6 +1,7 @@
 package kz.courier.apigateway.security;
 
 import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import lombok.extern.slf4j.Slf4j;
@@ -19,8 +20,8 @@ public class JwtUtil {
     @Value("${jwt.secret}")
     private String secret;
 
-    @Value("${jwt.expiration}")
-    private Long expiration;
+    @Value("${jwt.allowed-clock-skew-seconds:300}")
+    private Long allowedClockSkewSeconds;
 
     private SecretKey getSigningKey() {
         byte[] keyBytes = secret.getBytes(StandardCharsets.UTF_8);
@@ -29,6 +30,7 @@ public class JwtUtil {
 
     public Claims extractAllClaims(String token) {
         return Jwts.parser()
+                .clockSkewSeconds(allowedClockSkewSeconds)
                 .verifyWith(getSigningKey())
                 .build()
                 .parseSignedClaims(token)
@@ -64,7 +66,10 @@ public class JwtUtil {
     public Boolean validateToken(String token) {
         try {
             extractAllClaims(token);
-            return !isTokenExpired(token);
+            return true;
+        } catch (ExpiredJwtException e) {
+            log.warn("Token expired at {}", e.getClaims() != null ? e.getClaims().getExpiration() : "unknown");
+            return false;
         } catch (Exception e) {
             log.error("Token validation failed: {}", e.getMessage());
             return false;

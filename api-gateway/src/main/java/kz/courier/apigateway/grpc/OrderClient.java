@@ -65,6 +65,9 @@ public class OrderClient {
             if (request.getCompanyId() != null && !request.getCompanyId().isBlank()) {
                 grpcReq.setCompanyId(request.getCompanyId());
             }
+            if (request.getParcelSize() != null && !request.getParcelSize().isBlank()) {
+                grpcReq.setParcelSize(ParcelSize.valueOf(request.getParcelSize()));
+            }
 
             if (request.getItems() != null) {
                 grpcReq.addAllItems(request.getItems().stream().map(i -> {
@@ -166,6 +169,9 @@ public class OrderClient {
             data.put("orderId", grpcResponse.getOrderId());
             data.put("status", grpcResponse.getStatus().name());
             data.put("serviceType", grpcResponse.getServiceType().name());
+            if (grpcResponse.hasParcelSize()) {
+                data.put("parcelSize", grpcResponse.getParcelSize().name());
+            }
             data.put("comment", grpcResponse.getComment());
             if (grpcResponse.hasDeliveryConfirmationCode()) {
                 data.put("deliveryConfirmationCode", grpcResponse.getDeliveryConfirmationCode());
@@ -250,7 +256,8 @@ public class OrderClient {
                             "orderId", o.getOrderId(),
                             "status",  o.getStatus().name(),
                             "companyId", o.hasCompanyId() ? o.getCompanyId() : "",
-                            "totalAmount", String.valueOf(o.getTotalAmount())
+                            "totalAmount", String.valueOf(o.getTotalAmount()),
+                            "parcelSize", o.hasParcelSize() ? o.getParcelSize().name() : "SMALL"
                     ))
                     .toList();
 

@@ -21,6 +21,7 @@ public class AssignmentMapper {
                 .id(a.getId())
                 .orderId(a.getOrderId())
                 .courierId(a.getCourierId())
+                .routeId(a.getRouteId())
                 .assignedBy(a.getAssignedBy())
                 .assignmentStatus(a.getAssignmentStatus())
                 .assignedAt(a.getAssignedAt())
@@ -30,6 +31,18 @@ public class AssignmentMapper {
                 .cancelledAt(a.getCancelledAt())
                 .etaMinutes(a.getEtaMinutes())
                 .actualDurationMinutes(a.getActualDurationMinutes())
+                .score(a.getScore())
+                .demandUnits(a.getDemandUnits())
+                .assignmentPolicy(a.getAssignmentPolicy() != null ? a.getAssignmentPolicy().name() : null)
+                .failureReason(a.getFailureReason())
+                .failureMessage(a.getFailureMessage())
+                .scannedCandidates(a.getScannedCandidates())
+                .eligibleCandidates(a.getEligibleCandidates())
+                .retryCount(a.getRetryCount())
+                .lastRetryAt(a.getLastRetryAt())
+                .nextRetryAt(a.getNextRetryAt())
+                .resolvedAt(a.getResolvedAt())
+                .resolvedAssignmentId(a.getResolvedAssignmentId())
                 .rejectionReason(a.getRejectionReason())
                 .cancellationReason(a.getCancellationReason())
                 .createdAt(a.getCreatedAt())
@@ -40,6 +53,34 @@ public class AssignmentMapper {
     public LogisticsDto.PagedAssignments toPagedResponse(Page<CourierAssignment> page) {
         return LogisticsDto.PagedAssignments.builder()
                 .content(page.getContent().stream().map(this::toResponse).toList())
+                .currentPage(page.getNumber() + 1)
+                .pageSize(page.getSize())
+                .totalItems(page.getTotalElements())
+                .totalPages(page.getTotalPages())
+                .build();
+    }
+
+    public LogisticsDto.ManualRequiredAssignmentResponse toManualRequiredResponse(CourierAssignment a) {
+        return LogisticsDto.ManualRequiredAssignmentResponse.builder()
+                .assignmentId(a.getId())
+                .orderId(a.getOrderId())
+                .assignmentStatus(a.getAssignmentStatus())
+                .failureReason(a.getFailureReason())
+                .failureMessage(a.getFailureMessage())
+                .demandUnits(a.getDemandUnits())
+                .scannedCandidates(a.getScannedCandidates())
+                .eligibleCandidates(a.getEligibleCandidates())
+                .retryCount(a.getRetryCount())
+                .lastRetryAt(a.getLastRetryAt())
+                .nextRetryAt(a.getNextRetryAt())
+                .createdAt(a.getCreatedAt())
+                .updatedAt(a.getUpdatedAt())
+                .build();
+    }
+
+    public LogisticsDto.PagedManualRequiredAssignments toPagedManualRequiredResponse(Page<CourierAssignment> page) {
+        return LogisticsDto.PagedManualRequiredAssignments.builder()
+                .content(page.getContent().stream().map(this::toManualRequiredResponse).toList())
                 .currentPage(page.getNumber() + 1)
                 .pageSize(page.getSize())
                 .totalItems(page.getTotalElements())

@@ -5,6 +5,7 @@ import kz.courier.logisticsservice.dto.NearbycourierProjection;
 import kz.courier.logisticsservice.entity.AssignmentHistory;
 import kz.courier.logisticsservice.entity.AssignmentStatus;
 import kz.courier.logisticsservice.entity.CourierAssignment;
+import kz.courier.logisticsservice.entity.CourierRoute;
 import kz.courier.logisticsservice.exception.AssignmentNotFoundException;
 import kz.courier.logisticsservice.exception.BusinessException;
 import kz.courier.logisticsservice.exception.LocationNotFoundException;
@@ -14,6 +15,7 @@ import kz.courier.logisticsservice.mapper.AssignmentMapper;
 import kz.courier.logisticsservice.repository.AssignmentHistoryRepository;
 import kz.courier.logisticsservice.repository.AssignmentRepository;
 import kz.courier.logisticsservice.repository.CourierLocationRepository;
+import kz.courier.logisticsservice.repository.CourierRouteRepository;
 import kz.courier.logisticsservice.security.GatewayPrincipalProvider;
 import kz.courier.order.v1.OrderStatus;
 import lombok.RequiredArgsConstructor;
@@ -38,7 +40,8 @@ import java.util.UUID;
 public class LogisticsService {
 
     private static final List<AssignmentStatus> TERMINAL_ASSIGNMENT_STATUSES =
-            List.of(AssignmentStatus.DELIVERED, AssignmentStatus.CANCELLED, AssignmentStatus.FAILED);
+            List.of(AssignmentStatus.DELIVERED, AssignmentStatus.CANCELLED, AssignmentStatus.FAILED,
+                    AssignmentStatus.REJECTED, AssignmentStatus.MANUAL_REQUIRED);
     private static final Set<OrderStatus> AUTO_ASSIGNABLE_ORDER_STATUSES =
             EnumSet.of(OrderStatus.NEW, OrderStatus.ACCEPTED, OrderStatus.PREPARING,
                     OrderStatus.READY, OrderStatus.ASSIGNED);
@@ -56,10 +59,12 @@ public class LogisticsService {
     private final AssignmentRepository assignmentRepository;
     private final AssignmentHistoryRepository historyRepository;
     private final CourierLocationRepository locationRepository;
+    private final CourierRouteRepository routeRepository;
     private final AssignmentMapper mapper;
     private final AssignmentEventPublisher eventPublisher;
     private final OrderGrpcClient orderGrpcClient;
     private final GatewayPrincipalProvider gatewayPrincipalProvider;
+    private final CapacityAwareAssignmentService capacityAwareAssignmentService;
 
     // =========================================================================
     //  Assignment - Create
@@ -100,64 +105,12 @@ public class LogisticsService {
      */
     @Transactional
     public LogisticsDto.AutoAssignResponse autoAssign(UUID orderId) {
-        UUID actorId = gatewayPrincipalProvider.requireCurrentUserId();
-        log.info("Starting auto-assignment orderId={} actorId={}", orderId, actorId);
+        return capacityAwareAssignmentService.autoAssign(orderId);
+    }
 
-        ensureNoActiveAssignment(orderId);
-
-        OrderGrpcClient.OrderSnapshot order = orderGrpcClient.getOrder(orderId);
-        validateOrderIsAutoAssignable(order);
-
-        List<LogisticsDto.NearbyCourierResponse> nearbyCouriers = findNearbyCouriers(
-                order.pickupLatitude(),
-                order.pickupLongitude(),
-                AUTO_ASSIGN_RADIUS_METERS,
-                AUTO_ASSIGN_LIMIT);
-
-        log.info("Auto-assignment found {} nearby couriers for order={} pickup={}",
-                nearbyCouriers.size(), orderId, order.pickupAddressLabel());
-
-        List<CourierCandidateScore> eligibleCandidates = rankEligibleCouriers(nearbyCouriers);
-        if (eligibleCandidates.isEmpty()) {
-            throw new BusinessException("NO_COURIER_AVAILABLE",
-                    "No eligible courier found within " + AUTO_ASSIGN_RADIUS_METERS
-                            + " meters for order " + orderId);
-        }
-
-        CourierCandidateScore selected = eligibleCandidates.stream()
-                .sorted(Comparator.comparingDouble(CourierCandidateScore::totalScore).reversed()
-                        .thenComparingDouble(CourierCandidateScore::distanceMeters))
-                .findFirst()
-                .orElseThrow(() -> new BusinessException("NO_COURIER_AVAILABLE",
-                        "Unable to select courier for order " + orderId));
-
-        CourierAssignment assignment = createAssignmentInternal(
-                orderId,
-                selected.courierId(),
-                actorId,
-                selected.etaMinutes(),
-                "auto-assign");
-
-        log.info("Auto-assignment completed orderId={} assignmentId={} courierId={} totalScore={} distanceMeters={} etaMinutes={}",
-                orderId, assignment.getId(), selected.courierId(), selected.totalScore(),
-                selected.distanceMeters(), selected.etaMinutes());
-
-        return LogisticsDto.AutoAssignResponse.builder()
-                .assigned(mapper.toResponse(assignment))
-                .selectedCourier(LogisticsDto.AutoAssignedCourier.builder()
-                        .courierId(selected.courierId())
-                        .distanceMeters(selected.distanceMeters())
-                        .etaMinutes(selected.etaMinutes())
-                        .distanceScore(selected.distanceScore())
-                        .freshnessScore(selected.freshnessScore())
-                        .totalScore(selected.totalScore())
-                        .locationUpdatedAt(selected.locationUpdatedAt())
-                        .build())
-                .scannedCouriers(nearbyCouriers.size())
-                .eligibleCouriers(eligibleCandidates.size())
-                .searchRadiusMeters(AUTO_ASSIGN_RADIUS_METERS)
-                .evaluatedAt(OffsetDateTime.now())
-                .build();
+    @Transactional
+    public LogisticsDto.AssignmentResponse manualAssign(LogisticsDto.ManualAssignmentRequest req) {
+        return capacityAwareAssignmentService.manualAssign(req);
     }
 
     // =========================================================================
@@ -185,6 +138,20 @@ public class LogisticsService {
         return mapper.toPagedResponse(result);
     }
 
+    @Transactional(readOnly = true)
+    public LogisticsDto.PagedManualRequiredAssignments listManualRequiredAssignments(
+            int page, int pageSize, String sortBy, boolean descending) {
+
+        Sort sort = descending
+                ? Sort.by(sortBy).descending()
+                : Sort.by(sortBy).ascending();
+
+        Page<CourierAssignment> result = assignmentRepository.findUnresolvedManualRequired(
+                PageRequest.of(page - 1, pageSize, sort));
+
+        return mapper.toPagedManualRequiredResponse(result);
+    }
+
     // =========================================================================
     //  Assignment - Status transition
     // =========================================================================
@@ -210,6 +177,7 @@ public class LogisticsService {
         assignment.setAssignmentStatus(req.newStatus());
         applyTimestamps(assignment, req.newStatus());
         assignment = assignmentRepository.save(assignment);
+        releaseRouteCapacityIfFinished(assignment, req.newStatus());
 
         UUID changedBy = gatewayPrincipalProvider.requireCurrentUserId();
         recordHistory(id, oldStatus, req.newStatus(), changedBy, req.reason());
@@ -664,13 +632,15 @@ public class LogisticsService {
      */
     private void validateTransition(AssignmentStatus from, AssignmentStatus to) {
         boolean valid = switch (from) {
-            case PENDING -> to == AssignmentStatus.ASSIGNED || to == AssignmentStatus.CANCELLED;
+            case PENDING -> to == AssignmentStatus.ASSIGNED || to == AssignmentStatus.ACCEPTED
+                    || to == AssignmentStatus.REJECTED || to == AssignmentStatus.CANCELLED;
             case ASSIGNED -> to == AssignmentStatus.ACCEPTED || to == AssignmentStatus.REJECTED
                     || to == AssignmentStatus.CANCELLED;
             case ACCEPTED -> to == AssignmentStatus.PICKED_UP || to == AssignmentStatus.CANCELLED;
             case PICKED_UP -> to == AssignmentStatus.IN_TRANSIT;
             case IN_TRANSIT -> to == AssignmentStatus.ARRIVED || to == AssignmentStatus.FAILED;
             case ARRIVED -> to == AssignmentStatus.DELIVERED || to == AssignmentStatus.FAILED;
+            case MANUAL_REQUIRED -> false;
             default -> false;
         };
 
@@ -678,6 +648,29 @@ public class LogisticsService {
             throw new BusinessException("INVALID_TRANSITION",
                     "Transition " + from + " -> " + to + " is not allowed");
         }
+    }
+
+    private void releaseRouteCapacityIfFinished(CourierAssignment assignment, AssignmentStatus newStatus) {
+        if (assignment.getRouteId() == null || assignment.getDemandUnits() == null) {
+            return;
+        }
+        boolean releasesCapacity = newStatus == AssignmentStatus.REJECTED
+                || newStatus == AssignmentStatus.DELIVERED
+                || newStatus == AssignmentStatus.CANCELLED
+                || newStatus == AssignmentStatus.FAILED;
+        if (!releasesCapacity) {
+            return;
+        }
+
+        routeRepository.lockActiveRouteByCourierId(assignment.getCourierId())
+                .filter(route -> route.getId().equals(assignment.getRouteId()))
+                .ifPresent(route -> {
+                    route.setCurrentLoadUnits(Math.max(0,
+                            route.getCurrentLoadUnits() - assignment.getDemandUnits()));
+                    route.setActiveOrdersCount(Math.max(0,
+                            route.getActiveOrdersCount() - 1));
+                    routeRepository.save(route);
+                });
     }
 
     private record CourierCandidateScore(

@@ -124,6 +124,8 @@ public final class OrderMapper {
                 .setUpdatedAt(toTimestamp(o.getUpdatedAt()))
                 .setTotalAmount(o.getTotalAmount() != null ? o.getTotalAmount().doubleValue() : 0.0)
                 .setCompanyId(o.getCompanyId() != null ? o.getCompanyId().toString() : "")
+                .setParcelSize(kz.courier.order.v1.ParcelSize.valueOf(
+                        (o.getParcelSize() != null ? o.getParcelSize() : kz.courier.orderservice.model.ParcelSize.SMALL).name()))
                 .build();
     }
 

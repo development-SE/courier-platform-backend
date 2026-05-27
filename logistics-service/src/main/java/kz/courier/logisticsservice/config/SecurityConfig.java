@@ -65,7 +65,11 @@ public class SecurityConfig {
                         // Assignments — read for couriers, write for admins/managers
                         .requestMatchers(HttpMethod.POST, "/assignments/auto/**")
                         .hasAnyRole("ADMIN", "SUPER_ADMIN", "MANAGER", "DIRECTOR")
+                        .requestMatchers(HttpMethod.POST, "/assignments/manual")
+                        .hasAnyRole("ADMIN", "SUPER_ADMIN", "MANAGER", "DIRECTOR")
                         .requestMatchers(HttpMethod.POST, "/assignments")
+                        .hasAnyRole("ADMIN", "SUPER_ADMIN", "MANAGER", "DIRECTOR")
+                        .requestMatchers(HttpMethod.GET, "/assignments/manual-required")
                         .hasAnyRole("ADMIN", "SUPER_ADMIN", "MANAGER", "DIRECTOR")
                         .requestMatchers(HttpMethod.PATCH, "/assignments/*/status").authenticated()
                         .requestMatchers(HttpMethod.GET, "/assignments/**").authenticated()

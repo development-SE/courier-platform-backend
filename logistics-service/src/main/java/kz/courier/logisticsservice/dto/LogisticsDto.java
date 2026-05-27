@@ -5,6 +5,7 @@ import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
+import kz.courier.logisticsservice.entity.AssignmentFailureReason;
 import kz.courier.logisticsservice.entity.AssignmentStatus;
 import lombok.Builder;
 
@@ -44,6 +45,13 @@ public final class LogisticsDto {
             @NotNull String confirmationCode
     ) {}
 
+    /** Request body for POST /assignments/manual */
+    public record ManualAssignmentRequest(
+            @NotNull UUID orderId,
+            @NotNull UUID courierId,
+            String reason
+    ) {}
+
     /** Response for POST /assignments/{id}/resend-delivery-code */
     @Builder
     public record ResendDeliveryCodeResponse(
@@ -61,6 +69,7 @@ public final class LogisticsDto {
             UUID             id,
             UUID             orderId,
             UUID             courierId,
+            UUID             routeId,
             UUID             assignedBy,
             AssignmentStatus assignmentStatus,
             OffsetDateTime   assignedAt,
@@ -70,6 +79,18 @@ public final class LogisticsDto {
             OffsetDateTime   cancelledAt,
             Integer          etaMinutes,
             Integer          actualDurationMinutes,
+            Double           score,
+            Integer          demandUnits,
+            String           assignmentPolicy,
+            AssignmentFailureReason failureReason,
+            String           failureMessage,
+            Integer          scannedCandidates,
+            Integer          eligibleCandidates,
+            Integer          retryCount,
+            OffsetDateTime   lastRetryAt,
+            OffsetDateTime   nextRetryAt,
+            OffsetDateTime   resolvedAt,
+            UUID             resolvedAssignmentId,
             String           rejectionReason,
             String           cancellationReason,
             OffsetDateTime   createdAt,
@@ -90,11 +111,48 @@ public final class LogisticsDto {
     @Builder
     public record AutoAssignResponse(
             AssignmentResponse assigned,
+            UUID orderId,
+            UUID courierId,
+            UUID routeId,
+            AssignmentStatus assignmentStatus,
+            Double score,
+            AssignmentFailureReason failureReason,
+            String failureMessage,
+            String message,
             AutoAssignedCourier selectedCourier,
             int scannedCouriers,
             int eligibleCouriers,
             double searchRadiusMeters,
             OffsetDateTime evaluatedAt
+    ) {}
+
+    /** Manual-required row for operational dispatch queues. */
+    @Builder
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record ManualRequiredAssignmentResponse(
+            UUID assignmentId,
+            UUID orderId,
+            AssignmentStatus assignmentStatus,
+            AssignmentFailureReason failureReason,
+            String failureMessage,
+            Integer demandUnits,
+            Integer scannedCandidates,
+            Integer eligibleCandidates,
+            Integer retryCount,
+            OffsetDateTime lastRetryAt,
+            OffsetDateTime nextRetryAt,
+            OffsetDateTime createdAt,
+            OffsetDateTime updatedAt
+    ) {}
+
+    /** Paginated manual-required queue wrapper. */
+    @Builder
+    public record PagedManualRequiredAssignments(
+            List<ManualRequiredAssignmentResponse> content,
+            int currentPage,
+            int pageSize,
+            long totalItems,
+            int totalPages
     ) {}
 
     /** Explains why the chosen courier won the automatic dispatch score. */

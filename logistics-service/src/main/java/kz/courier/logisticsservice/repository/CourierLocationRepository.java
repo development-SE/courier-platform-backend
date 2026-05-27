@@ -3,7 +3,9 @@ package kz.courier.logisticsservice.repository;
 import kz.courier.logisticsservice.entity.CourierLocation;
 import kz.courier.logisticsservice.dto.NearbycourierProjection;
 import org.springframework.data.jpa.repository.JpaRepository;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -16,6 +18,10 @@ import java.util.UUID;
 public interface CourierLocationRepository extends JpaRepository<CourierLocation, UUID> {
 
     List<CourierLocation> findAllByIsOnlineTrue();
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT l FROM CourierLocation l WHERE l.courierId = :courierId")
+    java.util.Optional<CourierLocation> lockByCourierId(@Param("courierId") UUID courierId);
 
     /**
      * Finds online couriers within {@code radiusMeters} of the given point,

@@ -65,6 +65,8 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
     private String apiBaseUrl;
     @Value("${api.verify-path}")
     private String apiVerifyPath;
+    @Value("${jwt.access-expiry-min}")
+    private long accessExpiryMin;
 
     @Override
     public void register(RegisterRequest req, StreamObserver<RegisterResponse> responseObserver) {
@@ -279,7 +281,7 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
                     .setAccessToken(access)
                     .setRefreshToken(refresh)
                     .setExpiresAt(Timestamp.newBuilder()
-                            .setSeconds(Instant.now().getEpochSecond() + 15 * 60)
+                            .setSeconds(Instant.now().plusSeconds(accessExpiryMin * 60).getEpochSecond())
                             .build())
                     .setRole(kz.courier.auth.v1.Role.valueOf(user.getRole().name()))
                     .build();
@@ -312,7 +314,7 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
                     .setAccessToken(access)
                     .setRefreshToken(newRefresh)
                     .setExpiresAt(Timestamp.newBuilder()
-                            .setSeconds(Instant.now().getEpochSecond() + 15 * 60)
+                            .setSeconds(Instant.now().plusSeconds(accessExpiryMin * 60).getEpochSecond())
                             .build())
                     .build();
 

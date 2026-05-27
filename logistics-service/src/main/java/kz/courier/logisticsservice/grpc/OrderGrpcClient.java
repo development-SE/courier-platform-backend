@@ -8,6 +8,7 @@ import kz.courier.order.v1.GetOrderRequest;
 import kz.courier.order.v1.GetOrderResponse;
 import kz.courier.order.v1.OrderServiceGrpc;
 import kz.courier.order.v1.OrderStatus;
+import kz.courier.order.v1.ParcelSize;
 import kz.courier.order.v1.ResendDeliveryConfirmationCodeRequest;
 import kz.courier.order.v1.ResendDeliveryConfirmationCodeResponse;
 import kz.courier.order.v1.VerifyDeliveryCodeRequest;
@@ -66,12 +67,20 @@ public class OrderGrpcClient {
                 throw new BusinessException("ORDER_PICKUP_LOCATION_MISSING",
                         "Order " + orderId + " does not have pickup coordinates");
             }
+            if (!response.hasDeliveryAddress()) {
+                throw new BusinessException("ORDER_DELIVERY_LOCATION_MISSING",
+                        "Order " + orderId + " does not have delivery coordinates");
+            }
 
             return new OrderSnapshot(
                     UUID.fromString(response.getOrderId()),
                     response.getStatus(),
                     response.getPickupAddress().getLatitude(),
                     response.getPickupAddress().getLongitude(),
+                    response.getDeliveryAddress().getLatitude(),
+                    response.getDeliveryAddress().getLongitude(),
+                    response.hasParcelSize() ? response.getParcelSize() : ParcelSize.SMALL,
+                    response.getItemsList().stream().mapToInt(item -> item.getQuantity()).sum(),
                     buildPickupLabel(response));
         } catch (StatusRuntimeException ex) {
             throw mapGrpcError(orderId, ex);
@@ -174,6 +183,10 @@ public class OrderGrpcClient {
             OrderStatus status,
             double pickupLatitude,
             double pickupLongitude,
+            double deliveryLatitude,
+            double deliveryLongitude,
+            ParcelSize parcelSize,
+            int itemQuantity,
             String pickupAddressLabel
     ) {}
 

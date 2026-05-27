@@ -6,7 +6,7 @@ spring:
     name: ${LOGISTICS_SERVICE_NAME:logistics-service}
 
   datasource:
-    url: ${LOGISTICS_DB_URL:jdbc:postgresql://localhost:55433/logistics_db}
+    url: ${LOGISTICS_DB_URL:jdbc:postgresql://localhost:5433/logistics_db}
     username: ${LOGISTICS_DB_USERNAME:logistics_svc}
     password: ${LOGISTICS_DB_PASSWORD:logistics_secret}
     driver-class-name: org.postgresql.Driver
@@ -62,6 +62,24 @@ grpc:
     order-service:
       address: ${ORDER_GRPC_ADDRESS:discovery:///order-service}
       negotiationType: PLAINTEXT
+
+courier-service:
+  base-url: ${COURIER_SERVICE_URL:http://localhost:8087}
+
+kafka:
+  topic:
+    order-events: ${ORDER_EVENTS_TOPIC:kafka-order-events}
+
+assignment:
+  system:
+    user-id: ${ASSIGNMENT_SYSTEM_USER_ID:00000000-0000-0000-0000-000000000001}
+    roles: ${ASSIGNMENT_SYSTEM_ROLES:ADMIN,SUPER_ADMIN}
+  retry:
+    enabled: ${ASSIGNMENT_RETRY_ENABLED:true}
+    fixed-delay-ms: ${ASSIGNMENT_RETRY_FIXED_DELAY_MS:60000}
+    delay-seconds: ${ASSIGNMENT_RETRY_DELAY_SECONDS:60}
+    max-attempts: ${ASSIGNMENT_RETRY_MAX_ATTEMPTS:5}
+    batch-size: ${ASSIGNMENT_RETRY_BATCH_SIZE:10}
 
 management:
   endpoints:

@@ -14,6 +14,7 @@ import kz.courier.orderservice.dto.OrderFilter;
 import kz.courier.orderservice.exception.OrderNotFoundException;
 import kz.courier.orderservice.exception.OrderServiceException;
 import kz.courier.orderservice.mapper.OrderMapper;
+import kz.courier.orderservice.kafka.OrderEventPublisher;
 import kz.courier.orderservice.model.*;
 import kz.courier.orderservice.model.Address;
 import kz.courier.orderservice.model.Order;
@@ -67,6 +68,7 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
     private final ContactRepository contactRepository;
     private final ObjectMapper      objectMapper;
     private final DeliveryConfirmationService deliveryConfirmationService;
+    private final OrderEventPublisher orderEventPublisher;
 
     // ─────────────────────────────────────────────────────────────────────────
     //  CreateOrder
@@ -122,11 +124,13 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
                     .pickupContact(pickupContact)
                     .itemsJson(itemsJson)
                     .totalAmount(totalAmount)
+                    .parcelSize(resolveParcelSize(request))
                     .status(kz.courier.orderservice.model.OrderStatus.NEW)
                     .build();
 
             order = orderRepository.save(order);
             log.info("[gRPC] Order created id={}", order.getId());
+            orderEventPublisher.publishCreatedAfterCommit(order);
 
             send(responseObserver,
                     CreateOrderResponse.newBuilder()
@@ -703,6 +707,24 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
             total = total.add(lineTotal);
         }
         return total;
+    }
+
+    private kz.courier.orderservice.model.ParcelSize resolveParcelSize(CreateOrderRequest request) {
+        if (request.hasParcelSize()
+                && request.getParcelSize() != kz.courier.order.v1.ParcelSize.PARCEL_SIZE_UNSPECIFIED) {
+            return kz.courier.orderservice.model.ParcelSize.valueOf(request.getParcelSize().name());
+        }
+
+        int totalQuantity = request.getItemsList().stream()
+                .mapToInt(OrderItem::getQuantity)
+                .sum();
+        if (totalQuantity <= 1) {
+            return kz.courier.orderservice.model.ParcelSize.SMALL;
+        }
+        if (totalQuantity <= 3) {
+            return kz.courier.orderservice.model.ParcelSize.MEDIUM;
+        }
+        return kz.courier.orderservice.model.ParcelSize.LARGE;
     }
 
     private void requireSameIfPresent(UUID requestedId, UUID allowedId, String fieldName) {

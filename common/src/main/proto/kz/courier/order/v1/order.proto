@@ -26,6 +26,7 @@ enum OrderStatus {
   CANCELLED    = 9;  // Cancelled by any party (client, partner, system)
   REJECTED     = 10; // Partner explicitly rejected (e.g., out of stock)
   DELIVERY_CONFIRMATION_PENDING = 11; // Courier arrived; client OTP is required before final delivery
+  ASSIGNMENT_PENDING = 12; // Waiting for automatic retry or dispatcher/manual assignment
 }
 
 enum ServiceType {
@@ -34,6 +35,13 @@ enum ServiceType {
   SCHEDULED  = 2;   // Pre-scheduled (client chooses time window)
   EXPRESS    = 3;   // Priority / fastest (higher fee)
   // Add more later: SAME_DAY, ECO, DOCUMENT, etc.
+}
+
+enum ParcelSize {
+  PARCEL_SIZE_UNSPECIFIED = 0;
+  SMALL  = 1;
+  MEDIUM = 2;
+  LARGE  = 3;
 }
 
 enum AddressType {
@@ -88,6 +96,7 @@ message CreateOrderRequest {
   Address pickup_address              = 6;
   ContactInfo pickup_info             = 7;
   optional string company_id           = 8;
+  optional ParcelSize parcel_size      = 9;
 }
 
 message CreateOrderResponse {
@@ -119,6 +128,7 @@ message GetOrderResponse {
   optional string company_id             = 13;
   double total_amount                    = 14;
   optional string delivery_confirmation_code = 15; // Visible only to order owner while confirmation is pending
+  optional ParcelSize parcel_size         = 16;
 }
 
 message UpdateOrderStatusRequest {

@@ -45,8 +45,10 @@ public class AssignmentEventConsumer {
             Order order = orderRepository.findById(event.orderId())
                     .orElseThrow(() -> new OrderNotFoundException(event.orderId().toString()));
 
-            if (!isTerminal(order.getStatus())) {
-                order.setStatus(OrderStatus.ASSIGNED);
+            OrderStatus mappedStatus = mapAssignmentStatus(
+                    event.assignmentStatus() != null ? event.assignmentStatus() : AssignmentStatus.ASSIGNED);
+            if (mappedStatus != null && !isTerminal(order.getStatus())) {
+                order.setStatus(mappedStatus);
             }
             orderRepository.save(order);
 
@@ -91,12 +93,13 @@ public class AssignmentEventConsumer {
 
     private OrderStatus mapAssignmentStatus(AssignmentStatus status) {
         return switch (status) {
+            case PENDING, MANUAL_REQUIRED -> OrderStatus.ASSIGNMENT_PENDING;
             case ASSIGNED, ACCEPTED -> OrderStatus.ASSIGNED;
             case PICKED_UP -> OrderStatus.PICKED_UP;
             case IN_TRANSIT -> OrderStatus.IN_TRANSIT;
             case ARRIVED -> OrderStatus.DELIVERY_CONFIRMATION_PENDING;
             case CANCELLED, FAILED -> OrderStatus.CANCELLED;
-            case REJECTED, PENDING, DELIVERED -> null;
+            case REJECTED, DELIVERED -> null;
         };
     }
 
@@ -109,6 +112,7 @@ public class AssignmentEventConsumer {
     private enum AssignmentStatus {
         PENDING,
         ASSIGNED,
+        MANUAL_REQUIRED,
         ACCEPTED,
         REJECTED,
         PICKED_UP,
@@ -123,6 +127,7 @@ public class AssignmentEventConsumer {
             UUID assignmentId,
             UUID orderId,
             UUID courierId,
+            AssignmentStatus assignmentStatus,
             OffsetDateTime occurredAt
     ) {
     }
