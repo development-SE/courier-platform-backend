@@ -787,13 +787,52 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
         }
 
         UUID callerId = parseUuid(caller.userId(), "caller userId");
-        if (!callerId.equals(order.getAuthorId())) {
-            throw new OrderServiceException("FORBIDDEN", "You do not have access to modify this order");
+        if (isCompanyScoped(caller)) {
+            authorizeCompanyStatusChange(caller, order, newStatus);
+            return;
         }
+
         if (newStatus != kz.courier.orderservice.model.OrderStatus.CANCELLED) {
             throw new OrderServiceException("FORBIDDEN",
                     "Regular users may only cancel their own orders");
         }
+        if (!callerId.equals(order.getAuthorId())) {
+            throw new OrderServiceException("FORBIDDEN", "You do not have access to modify this order");
+        }
+    }
+
+    private void authorizeCompanyStatusChange(AuthenticatedUser caller,
+                                              Order order,
+                                              kz.courier.orderservice.model.OrderStatus newStatus) {
+        if (order.getCompanyId() == null) {
+            throw new OrderServiceException("FORBIDDEN",
+                    "Company users can only prepare company orders");
+        }
+
+        UUID callerCompanyId = parseOptionalUuid(caller.companyId(), "caller companyId");
+        if (callerCompanyId == null || !callerCompanyId.equals(order.getCompanyId())) {
+            throw new OrderServiceException("FORBIDDEN",
+                    "Company users can only modify orders for their own company");
+        }
+
+        if (!isCompanyPreparationTransition(order.getStatus(), newStatus)) {
+            throw new OrderServiceException("INVALID_TRANSITION",
+                    "Company order transition " + order.getStatus() + " -> " + newStatus + " is not allowed");
+        }
+    }
+
+    private boolean isCompanyPreparationTransition(kz.courier.orderservice.model.OrderStatus current,
+                                                   kz.courier.orderservice.model.OrderStatus next) {
+        return switch (current) {
+            case NEW -> next == kz.courier.orderservice.model.OrderStatus.ACCEPTED
+                    || next == kz.courier.orderservice.model.OrderStatus.REJECTED
+                    || next == kz.courier.orderservice.model.OrderStatus.CANCELLED;
+            case ACCEPTED -> next == kz.courier.orderservice.model.OrderStatus.PREPARING
+                    || next == kz.courier.orderservice.model.OrderStatus.CANCELLED;
+            case PREPARING -> next == kz.courier.orderservice.model.OrderStatus.READY
+                    || next == kz.courier.orderservice.model.OrderStatus.CANCELLED;
+            default -> false;
+        };
     }
 
     private boolean isPrivileged(AuthenticatedUser caller) {

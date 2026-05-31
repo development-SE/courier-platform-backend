@@ -96,6 +96,7 @@ public class OfferTimeoutScheduler {
 
         assignment.setAssignmentStatus(AssignmentStatus.TIMED_OUT);
         assignment.setCancelledAt(OffsetDateTime.now());
+        assignment.setCancellationReason("offer-timeout");
         assignmentRepository.save(assignment);
         releaseRouteImpact(assignment);
 

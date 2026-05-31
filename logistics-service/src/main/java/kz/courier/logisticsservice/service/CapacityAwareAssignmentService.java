@@ -648,6 +648,8 @@ public class CapacityAwareAssignmentService {
     }
 
     private void persistStops(UUID routeId, InsertionPlan insertion) {
+        OffsetDateTime now = OffsetDateTime.now();
+        Map<StopPlan, OffsetDateTime> estimatedArrivalTimes = estimateArrivalTimes(insertion, now);
         List<RouteStop> existingMutable = insertion.stops().stream()
                 .map(StopPlan::existingStop)
                 .filter(Objects::nonNull)
@@ -676,9 +678,22 @@ public class CapacityAwareAssignmentService {
                 continue;
             }
             stop.setSequenceNumber(i + 1);
+            stop.setEstimatedArrivalTime(estimatedArrivalTimes.get(plan));
             toSave.add(stop);
         }
         stopRepository.saveAll(toSave);
+    }
+
+    private Map<StopPlan, OffsetDateTime> estimateArrivalTimes(InsertionPlan insertion, OffsetDateTime baseTime) {
+        Map<StopPlan, OffsetDateTime> estimates = new IdentityHashMap<>();
+        Coordinate cursor = insertion.courierLocation();
+        double cumulativeMeters = 0.0;
+        for (StopPlan stop : insertion.stops()) {
+            cumulativeMeters += haversineMeters(cursor, stop.coordinate());
+            estimates.put(stop, baseTime.plusMinutes(estimateEtaMinutes(cumulativeMeters)));
+            cursor = stop.coordinate();
+        }
+        return estimates;
     }
 
     private boolean pickupBeforeDropoff(List<StopPlan> stops, UUID orderId) {

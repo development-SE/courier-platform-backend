@@ -30,8 +30,26 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<LogisticsDto.ApiResponse<Void>> handleBusiness(BusinessException ex) {
         log.warn("Business rule violation [{}]: {}", ex.getCode(), ex.getMessage());
-        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+        return ResponseEntity.status(statusForBusinessCode(ex.getCode()))
                 .body(LogisticsDto.ApiResponse.error(ex.getCode(), ex.getMessage()));
+    }
+
+    private HttpStatus statusForBusinessCode(String code) {
+        return switch (code) {
+            case "UNAUTHENTICATED" -> HttpStatus.UNAUTHORIZED;
+            case "FORBIDDEN" -> HttpStatus.FORBIDDEN;
+            case "DUPLICATE_ASSIGNMENT",
+                 "TERMINAL_STATUS",
+                 "OTP_ALREADY_ACTIVE" -> HttpStatus.CONFLICT;
+            case "INVALID_ARGUMENT",
+                 "INVALID_STATUS",
+                 "INVALID_TRANSITION",
+                 "ORDER_NOT_ASSIGNABLE",
+                 "COURIER_NOT_FEASIBLE",
+                 "COURIER_LOCATION_MISSING",
+                 "DEDICATED_FLOW_REQUIRED" -> HttpStatus.BAD_REQUEST;
+            default -> HttpStatus.UNPROCESSABLE_ENTITY;
+        };
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

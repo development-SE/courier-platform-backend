@@ -33,10 +33,8 @@ import java.util.List;
  *
  * <p>Role model enforced here:
  * <ul>
- *   <li>ADMIN / SUPER_ADMIN — full access to all endpoints</li>
- *   <li>COURIER — can update own location and read own assignments</li>
- *   <li>MANAGER / DIRECTOR — read assignments, manage statuses</li>
- * </ul>
+ *   <li>ADMIN / SUPER_ADMIN РІР‚вЂќ full access to all endpoints</li>
+ *   <li>COURIER РІР‚вЂќ can update own location and read own assignments</li> * </ul>
  */
 @Configuration
 @EnableWebSecurity
@@ -53,24 +51,24 @@ public class SecurityConfig {
                         // Actuator
                         .requestMatchers("/actuator/**").permitAll()
 
-                        // Nearby-courier search — admins and internal callers only
+                        // Nearby-courier search РІР‚вЂќ admins and internal callers only
                         .requestMatchers(HttpMethod.GET, "/couriers/nearby")
-                        .hasAnyRole("ADMIN", "SUPER_ADMIN", "MANAGER", "DIRECTOR")
+                        .hasAnyRole("ADMIN", "SUPER_ADMIN")
 
                         // Couriers update their own location / online status
                         .requestMatchers(HttpMethod.PUT, "/couriers/me/location").authenticated()
                         .requestMatchers(HttpMethod.PATCH, "/couriers/me/online").authenticated()
                         .requestMatchers(HttpMethod.GET, "/couriers/*/location").authenticated()
 
-                        // Assignments — read for couriers, write for admins/managers
+                        // Assignments: read for couriers, write for admins
                         .requestMatchers(HttpMethod.POST, "/assignments/auto/**")
-                        .hasAnyRole("ADMIN", "SUPER_ADMIN", "MANAGER", "DIRECTOR")
+                        .hasAnyRole("ADMIN", "SUPER_ADMIN")
                         .requestMatchers(HttpMethod.POST, "/assignments/manual")
-                        .hasAnyRole("ADMIN", "SUPER_ADMIN", "MANAGER", "DIRECTOR")
+                        .hasAnyRole("ADMIN", "SUPER_ADMIN")
                         .requestMatchers(HttpMethod.POST, "/assignments")
-                        .hasAnyRole("ADMIN", "SUPER_ADMIN", "MANAGER", "DIRECTOR")
+                        .hasAnyRole("ADMIN", "SUPER_ADMIN")
                         .requestMatchers(HttpMethod.GET, "/assignments/manual-required")
-                        .hasAnyRole("ADMIN", "SUPER_ADMIN", "MANAGER", "DIRECTOR")
+                        .hasAnyRole("ADMIN", "SUPER_ADMIN")
                         .requestMatchers(HttpMethod.PATCH, "/assignments/*/status").authenticated()
                         .requestMatchers(HttpMethod.GET, "/assignments/**").authenticated()
 
@@ -81,9 +79,9 @@ public class SecurityConfig {
         return http.build();
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
+    // РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚
     //  Filter: build Spring Security principal from Gateway-injected headers
-    // ─────────────────────────────────────────────────────────────────────────
+    // РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚РІвЂќР‚
 
     @Slf4j
     static class GatewayHeaderAuthFilter extends OncePerRequestFilter {
@@ -131,3 +129,4 @@ public class SecurityConfig {
         };
     }
 }
+

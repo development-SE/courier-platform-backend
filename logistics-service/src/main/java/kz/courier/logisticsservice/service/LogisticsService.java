@@ -79,15 +79,12 @@ public class LogisticsService {
 
     @Transactional
     public LogisticsDto.AssignmentResponse createAssignment(LogisticsDto.CreateAssignmentRequest req) {
-        requireAdmin("create assignments");
-        log.info("Creating assignment order={} courier={}", req.orderId(), req.courierId());
-
-        return mapper.toResponse(createAssignmentInternal(
+        log.info("Legacy POST /assignments requested order={} courier={}; delegating to capacity-aware manual assignment",
+                req.orderId(), req.courierId());
+        return manualAssign(new LogisticsDto.ManualAssignmentRequest(
                 req.orderId(),
                 req.courierId(),
-                req.assignedBy(),
-                req.etaMinutes(),
-                "manual-create"));
+                "legacy-post-assignments"));
     }
 
     // =========================================================================
@@ -223,6 +220,7 @@ public class LogisticsService {
         }
 
         assignment.setAssignmentStatus(req.newStatus());
+        applyTerminalReason(assignment, req.newStatus(), req.reason());
         applyTimestamps(assignment, req.newStatus());
         assignment = assignmentRepository.save(assignment);
         handleTerminalOutcome(assignment, req.newStatus(), req.reason());
@@ -410,7 +408,11 @@ public class LogisticsService {
 
         requireSelfOrAdmin(courierId, "change courier online status");
 
-        locationRepository.upsertOnlineStatus(courierId, req.isOnline());
+        int updatedRows = locationRepository.updateOnlineStatus(courierId, req.isOnline());
+        if (updatedRows == 0) {
+            throw new BusinessException("LOCATION_REQUIRED",
+                    "Courier must send a real location before changing online status");
+        }
         log.info("Courier {} is now {}", courierId, req.isOnline() ? "ONLINE" : "OFFLINE");
         retryManualRequiredAssignmentsWhenOnline(req.isOnline(), "courier-online-status");
 
@@ -710,6 +712,7 @@ public class LogisticsService {
                 if (assignment.getDeliveredAt() == null) {
                     assignment.setDeliveredAt(now);
                 }
+                assignment.setActualDurationMinutes(calculateActualDurationMinutes(assignment, now));
             }
             case CANCELLED -> {
                 if (assignment.getCancelledAt() == null) {
@@ -727,24 +730,32 @@ public class LogisticsService {
      * Extend with a dedicated FSM validator when the process becomes richer.
      */
     private void validateTransition(AssignmentStatus from, AssignmentStatus to) {
-        boolean valid = switch (from) {
-            case PENDING -> to == AssignmentStatus.ASSIGNED || to == AssignmentStatus.ACCEPTED
-                    || to == AssignmentStatus.REJECTED || to == AssignmentStatus.TIMED_OUT
-                    || to == AssignmentStatus.CANCELLED;
-            case ASSIGNED -> to == AssignmentStatus.ACCEPTED || to == AssignmentStatus.REJECTED
-                    || to == AssignmentStatus.CANCELLED;
-            case ACCEPTED -> to == AssignmentStatus.PICKED_UP || to == AssignmentStatus.CANCELLED;
-            case PICKED_UP -> to == AssignmentStatus.IN_TRANSIT;
-            case IN_TRANSIT -> to == AssignmentStatus.ARRIVED || to == AssignmentStatus.FAILED;
-            case ARRIVED -> to == AssignmentStatus.DELIVERED || to == AssignmentStatus.FAILED;
-            case MANUAL_REQUIRED -> false;
-            default -> false;
-        };
-
-        if (!valid) {
+        if (!from.canTransitionTo(to)) {
             throw new BusinessException("INVALID_TRANSITION",
                     "Transition " + from + " -> " + to + " is not allowed");
         }
+    }
+
+    private void applyTerminalReason(CourierAssignment assignment, AssignmentStatus newStatus, String reason) {
+        if (reason == null || reason.isBlank()) {
+            return;
+        }
+        if (newStatus == AssignmentStatus.REJECTED) {
+            assignment.setRejectionReason(reason);
+        }
+        if (newStatus == AssignmentStatus.CANCELLED || newStatus == AssignmentStatus.FAILED) {
+            assignment.setCancellationReason(reason);
+        }
+    }
+
+    private Integer calculateActualDurationMinutes(CourierAssignment assignment, OffsetDateTime completedAt) {
+        OffsetDateTime startedAt = assignment.getAcceptedAt() != null
+                ? assignment.getAcceptedAt()
+                : assignment.getAssignedAt();
+        if (startedAt == null) {
+            return null;
+        }
+        return (int) Math.max(0, ChronoUnit.MINUTES.between(startedAt, completedAt));
     }
 
     private void releaseRouteCapacityIfFinished(CourierAssignment assignment, AssignmentStatus newStatus) {
