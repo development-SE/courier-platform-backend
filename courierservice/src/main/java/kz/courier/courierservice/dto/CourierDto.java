@@ -24,7 +24,7 @@ public final class CourierDto {
     private CourierDto() {}
 
     public record CreateCourierRequest(
-            @NotNull UUID userId,
+            UUID userId,
             UUID companyId,
             CourierType courierType,
             EmploymentStatus employmentStatus,
@@ -59,7 +59,6 @@ public final class CourierDto {
     @Builder
     public record CourierProfileResponse(
             UUID id,
-            UUID userId,
             UUID companyId,
             CourierType courierType,
             EmploymentStatus employmentStatus,
@@ -86,7 +85,6 @@ public final class CourierDto {
     @Builder
     public record EligibilityResponse(
             UUID courierId,
-            UUID userId,
             boolean eligible,
             String reasonCode,
             String message,

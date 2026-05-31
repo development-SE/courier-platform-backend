@@ -13,13 +13,8 @@ import java.util.UUID;
 
 public interface CourierProfileRepository extends JpaRepository<CourierProfile, UUID> {
 
-    boolean existsByUserId(UUID userId);
-
     @EntityGraph(attributePaths = "schedules")
     Optional<CourierProfile> findWithSchedulesById(UUID id);
-
-    @EntityGraph(attributePaths = "schedules")
-    Optional<CourierProfile> findWithSchedulesByUserId(UUID userId);
 
     @Query("SELECT c FROM CourierProfile c WHERE (:companyId IS NULL OR c.companyId = :companyId)")
     Page<CourierProfile> findAllFiltered(@Param("companyId") UUID companyId, Pageable pageable);

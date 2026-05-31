@@ -69,7 +69,7 @@ spring:
             - StripPrefix=2   # /api/v1/users/... → /users/...
 
         - id: company-service
-          uri: ${COMPANY_SERVICE_URL:lb://company-service}
+          uri: ${COMPANY_SERVICE_URL:lb://companyservice}
           predicates:
             - Path=/api/v1/companies/**,/api/v1/employees/**,/api/v1/addresses/**
           filters:
@@ -83,15 +83,6 @@ spring:
         # GET    /api/v1/logistics/assignments/{id}
         # PATCH  /api/v1/logistics/assignments/{id}/status
         # GET    /api/v1/logistics/assignments/{id}/history
-        - id: courier-service
-          uri: ${COURIER_SERVICE_URL:lb://courier-service}
-          predicates:
-            - Path=/api/v1/couriers/**
-          filters:
-            - name: JwtAuthenticationFilter
-            - name: LoggingFilter
-            - StripPrefix=2
-
         - id: logistics-service-assignments
           uri: ${LOGISTICS_SERVICE_URL:lb://logistics-service}
           predicates:
@@ -124,6 +115,16 @@ spring:
             - name: JwtAuthenticationFilter
             - name: LoggingFilter
             - StripPrefix=3   # /api/v1/notifications/devices -> /devices
+
+        # Courier Service - courier profile, info
+        - id: courier-service
+          uri: ${COURIER_SERVICE_URL:lb://courier-service}
+          predicates:
+            - Path=/api/v1/couriers/**
+          filters:
+            - name: JwtAuthenticationFilter
+            - name: LoggingFilter
+            - StripPrefix=2
 
       # Default Filters (applied to all routes)
       default-filters:

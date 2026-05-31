@@ -10,11 +10,13 @@ import kz.courier.logisticsservice.repository.*;
 import kz.courier.logisticsservice.security.GatewayPrincipalProvider;
 import kz.courier.order.v1.OrderStatus;
 import kz.courier.order.v1.ParcelSize;
+import kz.courier.order.v1.ServiceType;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 
 import java.time.Instant;
 import java.time.OffsetDateTime;
@@ -143,6 +145,37 @@ class CapacityAwareAssignmentServiceTest {
     }
 
     @Test
+    void startsSecondOfferCycleWhenAllNearbyCouriersAlreadyTimedOutOrRejected() {
+        UUID courierId = UUID.randomUUID();
+        givenNearby(courierId, 43.01, 76.91, 150);
+        when(assignmentRepository.findExcludedCourierIdsByOrderId(orderId)).thenReturn(List.of(courierId));
+        when(assignmentRepository.countExcludedCourierIdsByOrderId(orderId)).thenReturn(1L);
+        givenProfile(courierId, "CONTRACTOR", "BIKE", 2);
+        givenNoActiveRoute(courierId);
+        givenCommit(courierId);
+
+        LogisticsDto.AutoAssignResponse response = service.autoAssign(orderId);
+
+        assertThat(response.assignmentStatus()).isEqualTo(AssignmentStatus.PENDING);
+        assertThat(response.courierId()).isEqualTo(courierId);
+    }
+
+    @Test
+    void concurrentUniqueConstraintRaceBecomesDuplicateAssignment() {
+        UUID courierId = UUID.randomUUID();
+        givenNearby(courierId, 43.01, 76.91, 150);
+        givenProfile(courierId, "CONTRACTOR", "BIKE", 2);
+        givenNoActiveRoute(courierId);
+        givenCommit(courierId);
+        doThrow(new DataIntegrityViolationException("ux_assignments_active_order"))
+                .when(assignmentRepository)
+                .saveAndFlush(argThat(a -> a.getAssignmentStatus() == AssignmentStatus.PENDING));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.autoAssign(orderId))
+                .hasMessageContaining("active assignment");
+    }
+
+    @Test
     void manualAssignmentRejectsAlreadyAssignedOrder() {
         UUID courierId = UUID.randomUUID();
         when(assignmentRepository.lockActiveAssignmentsByOrderId(orderId))
@@ -179,13 +212,16 @@ class CapacityAwareAssignmentServiceTest {
         return new OrderGrpcClient.OrderSnapshot(
                 orderId,
                 OrderStatus.READY,
+                ServiceType.STANDARD,
+                null,
                 43.00,
                 76.90,
                 43.05,
                 76.95,
                 parcelSize,
                 1,
-                "pickup");
+                "pickup",
+                OffsetDateTime.now().minusMinutes(5));
     }
 
     private void givenNearby(UUID courierId, double lat, double lon, double distance) {
@@ -201,12 +237,15 @@ class CapacityAwareAssignmentServiceTest {
         when(courierProfileClient.getCourier(courierId)).thenReturn(Optional.of(
                 new CourierProfileClient.CourierProfileSnapshot(
                         courierId,
+                        null,
                         courierType,
                         "ACTIVE",
                         transportType,
                         true,
                         true,
                         maxActiveOrders)));
+        lenient().when(courierProfileClient.getEligibility(courierId)).thenReturn(Optional.of(
+                new CourierProfileClient.CourierEligibilitySnapshot(true, "TEST_ELIGIBLE", "eligible")));
     }
 
     private void givenNoActiveRoute(UUID courierId) {

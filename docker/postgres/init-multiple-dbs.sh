@@ -19,6 +19,7 @@ SELECT 'CREATE DATABASE ${db_name} OWNER ${db_user}'
 WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '${db_name}')\gexec
 
 GRANT CONNECT ON DATABASE ${db_name} TO ${db_user};
+ALTER DATABASE ${db_name} SET timezone TO 'Asia/Qyzylorda';
 EOSQL
 }
 

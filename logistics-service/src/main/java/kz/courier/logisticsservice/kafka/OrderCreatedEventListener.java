@@ -10,12 +10,15 @@ import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
 import java.time.OffsetDateTime;
+import java.util.Set;
 import java.util.UUID;
 
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class OrderCreatedEventListener {
+    private static final Set<String> ASSIGNMENT_ELIGIBLE_ORDER_STATUSES =
+            Set.of("READY", "ASSIGNMENT_PENDING");
 
     private final ObjectMapper objectMapper;
     private final CapacityAwareAssignmentService assignmentService;
@@ -27,8 +30,13 @@ public class OrderCreatedEventListener {
     public void onOrderCreated(String payload) {
         try {
             OrderCreatedEvent event = objectMapper.readValue(payload, OrderCreatedEvent.class);
-            if (!"ORDER_CREATED".equals(event.eventType())) {
+            if (!Set.of("ORDER_CREATED", "ORDER_READY", "ORDER_STATUS_CHANGED").contains(event.eventType())) {
                 log.debug("[OrderCreatedEventListener] Ignoring eventType={}", event.eventType());
+                return;
+            }
+            if (event.status() == null || !ASSIGNMENT_ELIGIBLE_ORDER_STATUSES.contains(event.status())) {
+                log.debug("[OrderCreatedEventListener] Ignoring eventType={} status={} for orderId={}",
+                        event.eventType(), event.status(), event.orderId());
                 return;
             }
             if (assignmentService.hasActiveAssignment(event.orderId())) {
@@ -60,6 +68,8 @@ public class OrderCreatedEventListener {
             Double pickupLongitude,
             Double deliveryLatitude,
             Double deliveryLongitude,
+            String status,
+            String serviceType,
             String parcelSize,
             OffsetDateTime createdAt
     ) {}

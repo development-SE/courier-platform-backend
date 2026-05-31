@@ -1,12 +1,11 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 CREATE TABLE courier_profiles (
-    id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id             UUID NOT NULL UNIQUE,
+    id                  UUID PRIMARY KEY,
     company_id          UUID,
     courier_type        VARCHAR(30) NOT NULL CHECK (courier_type IN ('CONTRACTOR', 'EMPLOYEE')),
     employment_status   VARCHAR(30) NOT NULL CHECK (employment_status IN ('ONBOARDING', 'ACTIVE', 'SUSPENDED', 'INACTIVE')),
-    transport_type      VARCHAR(30) NOT NULL CHECK (transport_type IN ('FOOT', 'BIKE', 'SCOOTER', 'CAR', 'VAN')),
+    transport_type      VARCHAR(30)          CHECK (transport_type IN ('FOOT', 'BIKE', 'SCOOTER', 'CAR', 'VAN')),
     is_verified         BOOLEAN NOT NULL DEFAULT FALSE,
     can_take_orders     BOOLEAN NOT NULL DEFAULT TRUE,
     max_active_orders   INTEGER NOT NULL DEFAULT 1,
@@ -30,7 +29,6 @@ CREATE TABLE courier_work_schedules (
     CONSTRAINT chk_schedule_time_range CHECK (start_time < end_time)
 );
 
-CREATE INDEX idx_courier_profiles_user_id ON courier_profiles(user_id);
 CREATE INDEX idx_courier_profiles_company_id ON courier_profiles(company_id);
 CREATE INDEX idx_courier_profiles_type ON courier_profiles(courier_type);
 CREATE INDEX idx_courier_profiles_status ON courier_profiles(employment_status);

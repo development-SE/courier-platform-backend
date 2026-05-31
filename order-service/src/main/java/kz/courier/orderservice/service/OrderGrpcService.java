@@ -125,12 +125,17 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
                     .itemsJson(itemsJson)
                     .totalAmount(totalAmount)
                     .parcelSize(resolveParcelSize(request))
-                    .status(kz.courier.orderservice.model.OrderStatus.NEW)
+                    .status(companyId == null
+                            ? kz.courier.orderservice.model.OrderStatus.READY
+                            : kz.courier.orderservice.model.OrderStatus.NEW)
                     .build();
 
             order = orderRepository.save(order);
             log.info("[gRPC] Order created id={}", order.getId());
             orderEventPublisher.publishCreatedAfterCommit(order);
+            if (order.getStatus() == kz.courier.orderservice.model.OrderStatus.READY) {
+                orderEventPublisher.publishReadyAfterCommit(order);
+            }
 
             send(responseObserver,
                     CreateOrderResponse.newBuilder()
@@ -140,6 +145,8 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
                             .setRecipientContactId(recipientContact.getId().toString())
                             .setPickupAddrId(pickupAddr.getId().toString())
                             .setPickupContactId(pickupContact.getId().toString())
+                            .setCurrentStatus(kz.courier.order.v1.OrderStatus.valueOf(order.getStatus().name()))
+                            .setServiceType(kz.courier.order.v1.ServiceType.valueOf(order.getServiceType().name()))
                             .build());
 
         } catch (IllegalArgumentException e) {
@@ -266,6 +273,10 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
 
             order.setStatus(newStatus);
             orderRepository.save(order);
+            orderEventPublisher.publishStatusChangedAfterCommit(order);
+            if (newStatus == kz.courier.orderservice.model.OrderStatus.READY) {
+                orderEventPublisher.publishReadyAfterCommit(order);
+            }
 
             send(responseObserver,
                     UpdateOrderStatusResponse.newBuilder()

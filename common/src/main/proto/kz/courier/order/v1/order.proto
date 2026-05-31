@@ -106,6 +106,8 @@ message CreateOrderResponse {
   string recipient_contact_id            = 4;
   string pickup_addr_id                  = 5;
   string pickup_contact_id               = 6;
+  OrderStatus current_status             = 7;
+  ServiceType service_type               = 8;
 }
 
 message GetOrderRequest {

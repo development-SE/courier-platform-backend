@@ -1,6 +1,5 @@
 package kz.courier.orderservice.kafka;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import kz.courier.orderservice.model.Order;
 import kz.courier.orderservice.model.OrderStatus;
 import kz.courier.orderservice.model.ServiceType;
@@ -16,6 +15,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
@@ -37,9 +37,9 @@ class OrderEventPublisherTest {
 
     @Test
     void publishesOrderCreatedOnlyAfterCommit() {
-        OrderEventPublisher publisher = new OrderEventPublisher(kafkaTemplate, new ObjectMapper());
+        OrderEventPublisher publisher = new OrderEventPublisher(kafkaTemplate);
         ReflectionTestUtils.setField(publisher, "orderEventsTopic", "kafka-order-events");
-        when(kafkaTemplate.send(eq("kafka-order-events"), anyString(), anyString()))
+        when(kafkaTemplate.send(eq("kafka-order-events"), anyString(), any()))
                 .thenReturn(new CompletableFuture<>());
 
         Order order = Order.builder()
@@ -53,10 +53,10 @@ class OrderEventPublisherTest {
         TransactionSynchronizationManager.initSynchronization();
         publisher.publishCreatedAfterCommit(order);
 
-        verify(kafkaTemplate, never()).send(anyString(), anyString(), anyString());
+        verify(kafkaTemplate, never()).send(anyString(), anyString(), any());
         TransactionSynchronizationManager.getSynchronizations()
                 .forEach(synchronization -> synchronization.afterCommit());
 
-        verify(kafkaTemplate).send(eq("kafka-order-events"), eq(order.getId().toString()), anyString());
+        verify(kafkaTemplate).send(eq("kafka-order-events"), eq(order.getId().toString()), any());
     }
 }

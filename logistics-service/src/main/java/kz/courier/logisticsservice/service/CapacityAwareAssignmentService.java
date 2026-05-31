@@ -10,8 +10,10 @@ import kz.courier.logisticsservice.repository.*;
 import kz.courier.logisticsservice.security.GatewayPrincipalProvider;
 import kz.courier.order.v1.OrderStatus;
 import kz.courier.order.v1.ParcelSize;
+import kz.courier.order.v1.ServiceType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,17 +29,16 @@ public class CapacityAwareAssignmentService {
 
     private static final List<AssignmentStatus> ACTIVE_ASSIGNMENT_EXCLUSIONS =
             List.of(AssignmentStatus.DELIVERED, AssignmentStatus.CANCELLED, AssignmentStatus.FAILED,
-                    AssignmentStatus.REJECTED, AssignmentStatus.MANUAL_REQUIRED);
+                    AssignmentStatus.REJECTED, AssignmentStatus.TIMED_OUT, AssignmentStatus.MANUAL_REQUIRED);
     private static final Set<OrderStatus> AUTO_ASSIGNABLE_ORDER_STATUSES =
-            EnumSet.of(OrderStatus.NEW, OrderStatus.ACCEPTED, OrderStatus.PREPARING,
-                    OrderStatus.READY, OrderStatus.ASSIGNED);
+            EnumSet.of(OrderStatus.READY, OrderStatus.ASSIGNMENT_PENDING);
     private static final double AUTO_ASSIGN_RADIUS_METERS = 5_000.0;
     private static final int AUTO_ASSIGN_LIMIT = 20;
     private static final long MAX_LOCATION_AGE_MINUTES = 10;
     private static final double AVERAGE_COURIER_SPEED_METERS_PER_MINUTE = 250.0;
     private static final List<AssignmentStatus> TERMINAL_ASSIGNMENT_STATUSES =
             List.of(AssignmentStatus.DELIVERED, AssignmentStatus.CANCELLED, AssignmentStatus.FAILED,
-                    AssignmentStatus.REJECTED, AssignmentStatus.MANUAL_REQUIRED);
+                    AssignmentStatus.REJECTED, AssignmentStatus.TIMED_OUT, AssignmentStatus.MANUAL_REQUIRED);
 
     private final AssignmentRepository assignmentRepository;
     private final AssignmentHistoryRepository historyRepository;
@@ -53,9 +54,16 @@ public class CapacityAwareAssignmentService {
     @Value("${assignment.retry.delay-seconds:60}")
     private long retryDelaySeconds;
 
+    @Value("${assignment.employee-search-timeout-seconds:120}")
+    private long employeeSearchTimeoutSeconds;
+
+    @Value("${assignment.standard-batching-window-seconds:0}")
+    private long standardBatchingWindowSeconds;
+
     @Transactional
     public LogisticsDto.AutoAssignResponse autoAssign(UUID orderId) {
         UUID actorId = gatewayPrincipalProvider.requireCurrentUserId();
+        assignmentRepository.lockOrderAssignmentMutex(orderId.toString());
         if (!assignmentRepository.lockActiveAssignmentsByOrderId(orderId).isEmpty()) {
             throw new BusinessException("DUPLICATE_ASSIGNMENT",
                     "An active assignment already exists for order " + orderId);
@@ -81,13 +89,22 @@ public class CapacityAwareAssignmentService {
         }
 
         int demandUnits = demandUnits(order);
+        Optional<LogisticsDto.AutoAssignResponse> waiting = maybeWaitBeforeFallbackOrBatching(order, demandUnits, actorId);
+        if (waiting.isPresent()) {
+            return waiting.get();
+        }
+
         List<LogisticsDto.NearbyCourierResponse> nearbyCouriers = findNearby(order);
+        Set<UUID> excludedCourierIds = exclusionSetForThisCycle(orderId, nearbyCouriers);
         AssignmentFailureReason noPlanReason = nearbyCouriers.isEmpty()
                 ? AssignmentFailureReason.NO_ONLINE_COURIERS
+                : allNearbyLocationsStale(nearbyCouriers)
+                ? AssignmentFailureReason.STALE_LOCATIONS
                 : AssignmentFailureReason.NO_CAPACITY_AVAILABLE;
         List<CandidatePlan> rankedPlans;
         try {
             rankedPlans = nearbyCouriers.stream()
+                    .filter(candidate -> !excludedCourierIds.contains(candidate.courierId()))
                     .map(candidate -> evaluateCandidate(candidate, order, demandUnits))
                     .flatMap(Optional::stream)
                     .sorted(Comparator.comparingDouble(CandidatePlan::score))
@@ -133,6 +150,8 @@ public class CapacityAwareAssignmentService {
 
         String message = nearbyCouriers.isEmpty()
                 ? "No online couriers were found near the pickup point"
+                : noPlanReason == AssignmentFailureReason.STALE_LOCATIONS
+                ? "Online couriers were found nearby, but their locations are stale"
                 : "No courier had enough capacity or a feasible route insertion";
         CourierAssignment failed = persistManualRequired(orderId, demandUnits, nearbyCouriers.size(),
                 rankedPlans.size(), noPlanReason, message, actorId);
@@ -145,6 +164,7 @@ public class CapacityAwareAssignmentService {
         UUID actorId = gatewayPrincipalProvider.requireCurrentUserId();
         UUID orderId = request.orderId();
         UUID courierId = request.courierId();
+        assignmentRepository.lockOrderAssignmentMutex(orderId.toString());
 
         if (!assignmentRepository.lockActiveAssignmentsByOrderId(orderId).isEmpty()) {
             throw new BusinessException("DUPLICATE_ASSIGNMENT",
@@ -214,28 +234,65 @@ public class CapacityAwareAssignmentService {
                 .toList();
     }
 
+    private boolean allNearbyLocationsStale(List<LogisticsDto.NearbyCourierResponse> nearbyCouriers) {
+        if (nearbyCouriers.isEmpty()) {
+            return false;
+        }
+        OffsetDateTime now = OffsetDateTime.now();
+        return nearbyCouriers.stream()
+                .allMatch(candidate -> candidate.updatedAt() == null
+                        || ChronoUnit.MINUTES.between(candidate.updatedAt(), now) > MAX_LOCATION_AGE_MINUTES);
+    }
+
     private Optional<CandidatePlan> evaluateCandidate(
             LogisticsDto.NearbyCourierResponse candidate,
             OrderGrpcClient.OrderSnapshot order,
             int demandUnits) {
 
         if (!Boolean.TRUE.equals(candidate.isOnline()) || candidate.updatedAt() == null) {
+            log.debug("[AssignmentCandidate] reject orderId={} courierId={} reason=OFFLINE_OR_MISSING_LOCATION online={} updatedAt={}",
+                    order.orderId(), candidate.courierId(), candidate.isOnline(), candidate.updatedAt());
             return Optional.empty();
         }
         long ageMinutes = ChronoUnit.MINUTES.between(candidate.updatedAt(), OffsetDateTime.now());
         if (ageMinutes > MAX_LOCATION_AGE_MINUTES) {
+            log.debug("[AssignmentCandidate] reject orderId={} courierId={} reason=STALE_LOCATION ageMinutes={} maxAgeMinutes={} updatedAt={}",
+                    order.orderId(), candidate.courierId(), ageMinutes, MAX_LOCATION_AGE_MINUTES, candidate.updatedAt());
             return Optional.empty();
         }
 
         Optional<CourierProfileClient.CourierProfileSnapshot> profileOpt =
                 courierProfileClient.getCourier(candidate.courierId());
-        if (profileOpt.isEmpty() || !isEligible(profileOpt.get())) {
+        if (profileOpt.isEmpty()) {
+            log.debug("[AssignmentCandidate] reject orderId={} courierId={} reason=PROFILE_NOT_FOUND",
+                    order.orderId(), candidate.courierId());
+            return Optional.empty();
+        }
+        EligibilityResult eligibility = eligibilityResult(profileOpt.get(), order);
+        if (!eligibility.eligible()) {
+            CourierProfileClient.CourierProfileSnapshot profile = profileOpt.get();
+            log.debug("[AssignmentCandidate] reject orderId={} courierId={} reason={} courierType={} companyId={} employmentStatus={} verified={} canTakeOrders={} transportType={}",
+                    order.orderId(), candidate.courierId(), eligibility.reason(), profile.courierType(),
+                    profile.companyId(), profile.employmentStatus(), profile.verified(),
+                    profile.canTakeOrders(), profile.transportType());
             return Optional.empty();
         }
 
         CourierProfileClient.CourierProfileSnapshot profile = profileOpt.get();
+        long orderAgeSeconds = Math.max(0, ChronoUnit.SECONDS.between(order.createdAt(), OffsetDateTime.now()));
+        if (order.companyId() != null
+                && !"EMPLOYEE".equals(profile.courierType())
+                && orderAgeSeconds < employeeSearchTimeoutSeconds) {
+            log.debug("[AssignmentCandidate] reject orderId={} courierId={} reason=WAITING_FOR_COMPANY_EMPLOYEE orderCompanyId={} courierType={} orderAgeSeconds={} employeeSearchTimeoutSeconds={}",
+                    order.orderId(), candidate.courierId(), order.companyId(), profile.courierType(),
+                    orderAgeSeconds, employeeSearchTimeoutSeconds);
+            return Optional.empty();
+        }
+
         int maxCapacity = vehicleCapacity(profile.transportType());
         if (demandUnits > maxCapacity) {
+            log.debug("[AssignmentCandidate] reject orderId={} courierId={} reason=PARCEL_TOO_LARGE demandUnits={} maxCapacity={} transportType={}",
+                    order.orderId(), candidate.courierId(), demandUnits, maxCapacity, profile.transportType());
             return Optional.empty();
         }
 
@@ -249,6 +306,9 @@ public class CapacityAwareAssignmentService {
         int activeOrders = routeOpt.map(CourierRoute::getActiveOrdersCount).orElse(0);
         int maxActiveOrders = Math.max(1, profile.maxActiveOrders());
         if (currentLoad + demandUnits > maxCapacity || activeOrders >= maxActiveOrders) {
+            log.debug("[AssignmentCandidate] reject orderId={} courierId={} reason=CAPACITY_OR_MAX_ACTIVE currentLoad={} demandUnits={} maxCapacity={} activeOrders={} maxActiveOrders={} routeId={}",
+                    order.orderId(), candidate.courierId(), currentLoad, demandUnits, maxCapacity,
+                    activeOrders, maxActiveOrders, routeOpt.map(CourierRoute::getId).orElse(null));
             return Optional.empty();
         }
 
@@ -258,6 +318,15 @@ public class CapacityAwareAssignmentService {
         Optional<InsertionPlan> insertion = bestInsertion(routeOpt.orElse(null), existingStops,
                 courierLocation, order.orderId(), pickup, dropoff);
         if (insertion.isEmpty()) {
+            log.debug("[AssignmentCandidate] reject orderId={} courierId={} reason=NO_FEASIBLE_ROUTE_INSERTION existingStops={} routeId={}",
+                    order.orderId(), candidate.courierId(), existingStops.size(),
+                    routeOpt.map(CourierRoute::getId).orElse(null));
+            return Optional.empty();
+        }
+
+        if (order.serviceType() == ServiceType.EXPRESS && activeOrders > 0) {
+            log.debug("[AssignmentCandidate] reject orderId={} courierId={} reason=EXPRESS_REQUIRES_EMPTY_ROUTE activeOrders={}",
+                    order.orderId(), candidate.courierId(), activeOrders);
             return Optional.empty();
         }
 
@@ -265,10 +334,8 @@ public class CapacityAwareAssignmentService {
         double distanceToPickup = haversineMeters(courierLocation, pickup);
         double activeOrdersPenalty = ((double) activeOrders / maxActiveOrders) * AUTO_ASSIGN_RADIUS_METERS;
         double capacityUsagePenalty = ((double) (currentLoad + demandUnits) / maxCapacity) * AUTO_ASSIGN_RADIUS_METERS;
-        double score = round(addedRouteDistance * 0.45
-                + activeOrdersPenalty * 0.20
-                + capacityUsagePenalty * 0.20
-                + distanceToPickup * 0.15);
+        double score = scoreCandidate(order, profile, addedRouteDistance, distanceToPickup,
+                activeOrdersPenalty, capacityUsagePenalty);
 
         AssignmentPolicy policy = "EMPLOYEE".equals(profile.courierType())
                 ? AssignmentPolicy.DIRECT
@@ -276,6 +343,11 @@ public class CapacityAwareAssignmentService {
         AssignmentStatus status = policy == AssignmentPolicy.DIRECT
                 ? AssignmentStatus.ASSIGNED
                 : AssignmentStatus.PENDING;
+
+        log.debug("[AssignmentCandidate] accept orderId={} courierId={} courierType={} transportType={} policy={} status={} demandUnits={} maxCapacity={} currentLoad={} activeOrders={} score={} distanceToPickupMeters={} addedRouteDistanceMeters={}",
+                order.orderId(), candidate.courierId(), profile.courierType(), profile.transportType(),
+                policy, status, demandUnits, maxCapacity, currentLoad, activeOrders, round(score),
+                round(distanceToPickup), round(addedRouteDistance));
 
         return Optional.of(new CandidatePlan(
                 candidate.courierId(),
@@ -359,7 +431,14 @@ public class CapacityAwareAssignmentService {
                 .score(plan.score())
                 .demandUnits(demandUnits)
                 .build();
-        assignment = assignmentRepository.saveAndFlush(assignment);
+        try {
+            assignment = assignmentRepository.saveAndFlush(assignment);
+        } catch (DataIntegrityViolationException ex) {
+            log.info("[AssignmentCandidate] concurrent assignment won orderId={} courierId={} constraint={}",
+                    order.orderId(), plan.courierId(), mostSpecificMessage(ex));
+            throw new BusinessException("DUPLICATE_ASSIGNMENT",
+                    "An active assignment already exists for order " + order.orderId());
+        }
 
         historyRepository.save(AssignmentHistory.builder()
                 .assignmentId(assignment.getId())
@@ -447,6 +526,81 @@ public class CapacityAwareAssignmentService {
                     AssignmentFailureReason.INVALID_ORDER_DATA;
             default -> AssignmentFailureReason.UNKNOWN;
         };
+    }
+
+    private Optional<LogisticsDto.AutoAssignResponse> maybeWaitBeforeFallbackOrBatching(
+            OrderGrpcClient.OrderSnapshot order,
+            int demandUnits,
+            UUID actorId) {
+
+        long ageSeconds = Math.max(0, ChronoUnit.SECONDS.between(order.createdAt(), OffsetDateTime.now()));
+        if (order.serviceType() == ServiceType.STANDARD
+                && order.status() == OrderStatus.READY
+                && standardBatchingWindowSeconds > 0
+                && ageSeconds < standardBatchingWindowSeconds) {
+            long remaining = standardBatchingWindowSeconds - ageSeconds;
+            String message = "STANDARD order is waiting for batching window";
+            CourierAssignment failed = persistManualRequired(order.orderId(), demandUnits, 0, 0,
+                    AssignmentFailureReason.NO_CAPACITY_AVAILABLE, message, actorId);
+            failed.setNextRetryAt(OffsetDateTime.now().plusSeconds(remaining));
+            assignmentRepository.save(failed);
+            return Optional.of(failureResponse(order.orderId(), failed, 0, 0,
+                    AssignmentFailureReason.NO_CAPACITY_AVAILABLE, message));
+        }
+
+        return Optional.empty();
+    }
+
+    private Set<UUID> exclusionSetForThisCycle(UUID orderId, List<LogisticsDto.NearbyCourierResponse> nearbyCouriers) {
+        Set<UUID> excludedCourierIds = new HashSet<>(assignmentRepository.findExcludedCourierIdsByOrderId(orderId));
+        if (excludedCourierIds.isEmpty() || nearbyCouriers.isEmpty()) {
+            return excludedCourierIds;
+        }
+
+        Set<UUID> nearbyCourierIds = new HashSet<>();
+        for (LogisticsDto.NearbyCourierResponse nearbyCourier : nearbyCouriers) {
+            nearbyCourierIds.add(nearbyCourier.courierId());
+        }
+        if (!excludedCourierIds.containsAll(nearbyCourierIds)) {
+            return excludedCourierIds;
+        }
+
+        long totalExcluded = assignmentRepository.countExcludedCourierIdsByOrderId(orderId);
+        log.info("[AssignmentCycle] all nearby couriers already rejected/timed out orderId={} nearbyCouriers={} totalExcluded={}; starting another offer cycle",
+                orderId, nearbyCourierIds.size(), totalExcluded);
+        return Set.of();
+    }
+
+    private double scoreCandidate(OrderGrpcClient.OrderSnapshot order,
+                                  CourierProfileClient.CourierProfileSnapshot profile,
+                                  double addedRouteDistance,
+                                  double distanceToPickup,
+                                  double activeOrdersPenalty,
+                                  double capacityUsagePenalty) {
+        if (order.serviceType() == ServiceType.EXPRESS) {
+            return round(distanceToPickup * 0.75
+                    + activeOrdersPenalty * 0.15
+                    + capacityUsagePenalty * 0.10);
+        }
+
+        double score = addedRouteDistance * 0.45
+                + activeOrdersPenalty * 0.20
+                + capacityUsagePenalty * 0.20
+                + distanceToPickup * 0.15;
+
+        if (order.companyId() != null && "EMPLOYEE".equals(profile.courierType())
+                && order.companyId().equals(profile.companyId())) {
+            score -= AUTO_ASSIGN_RADIUS_METERS * 0.50;
+        }
+
+        long ageSeconds = Math.max(0, ChronoUnit.SECONDS.between(order.createdAt(), OffsetDateTime.now()));
+        if (order.companyId() != null
+                && !"EMPLOYEE".equals(profile.courierType())
+                && ageSeconds < employeeSearchTimeoutSeconds) {
+            score += AUTO_ASSIGN_RADIUS_METERS * 10;
+        }
+
+        return round(Math.max(0.0, score));
     }
 
     private Optional<InsertionPlan> bestInsertion(CourierRoute route,
@@ -543,13 +697,34 @@ public class CapacityAwareAssignmentService {
         return pickup >= 0 && dropoff > pickup;
     }
 
-    private boolean isEligible(CourierProfileClient.CourierProfileSnapshot profile) {
-        return "ACTIVE".equals(profile.employmentStatus())
+    private boolean isEligible(CourierProfileClient.CourierProfileSnapshot profile,
+                               OrderGrpcClient.OrderSnapshot order) {
+        return eligibilityResult(profile, order).eligible();
+    }
+
+    private EligibilityResult eligibilityResult(CourierProfileClient.CourierProfileSnapshot profile,
+                                                OrderGrpcClient.OrderSnapshot order) {
+        boolean profileAllowed = "ACTIVE".equals(profile.employmentStatus())
                 && profile.verified()
                 && profile.canTakeOrders()
                 && profile.transportType() != null
                 && !profile.transportType().isBlank();
+        if (!profileAllowed) {
+            return new EligibilityResult(false, "PROFILE_NOT_ALLOWED");
+        }
+        if (order.companyId() != null && "EMPLOYEE".equals(profile.courierType())
+                && !order.companyId().equals(profile.companyId())) {
+            return new EligibilityResult(false, "EMPLOYEE_COMPANY_MISMATCH");
+        }
+        if (!"EMPLOYEE".equals(profile.courierType())) {
+            return new EligibilityResult(true, "CONTRACTOR_AVAILABLE");
+        }
+        return courierProfileClient.getEligibility(profile.courierId())
+                .map(eligibility -> new EligibilityResult(eligibility.eligible(), eligibility.reasonCode()))
+                .orElseGet(() -> new EligibilityResult(false, "EMPLOYEE_ELIGIBILITY_UNKNOWN"));
     }
+
+    private record EligibilityResult(boolean eligible, String reason) {}
 
     private int demandUnits(OrderGrpcClient.OrderSnapshot order) {
         ParcelSize size = order.parcelSize();
@@ -611,6 +786,11 @@ public class CapacityAwareAssignmentService {
 
     private double round(double value) {
         return Math.round(value * 100.0) / 100.0;
+    }
+
+    private String mostSpecificMessage(DataIntegrityViolationException ex) {
+        Throwable cause = ex.getMostSpecificCause();
+        return cause == null ? ex.getMessage() : cause.getMessage();
     }
 
     private record Coordinate(double latitude, double longitude) {}

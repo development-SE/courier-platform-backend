@@ -74,6 +74,11 @@ public class AssignmentController {
                 .body(LogisticsDto.ApiResponse.ok(service.manualAssign(req)));
     }
 
+    @PostMapping("/manual-required/retry")
+    public ResponseEntity<LogisticsDto.ApiResponse<String>> retryManualRequired() {
+        return ResponseEntity.ok(service.retryManualRequiredNow());
+    }
+
     // ── Read ──────────────────────────────────────────────────────────────────
 
     @GetMapping("/{id}")
@@ -138,6 +143,24 @@ public class AssignmentController {
 
         return ResponseEntity.ok(
                 LogisticsDto.ApiResponse.ok(service.updateStatus(id, req)));
+    }
+
+    @PostMapping("/{id}/accept")
+    public ResponseEntity<LogisticsDto.ApiResponse<LogisticsDto.AssignmentResponse>> accept(
+            @PathVariable UUID id) {
+
+        return ResponseEntity.ok(
+                LogisticsDto.ApiResponse.ok(service.acceptAssignment(id)));
+    }
+
+    @PostMapping("/{id}/reject")
+    public ResponseEntity<LogisticsDto.ApiResponse<LogisticsDto.AssignmentResponse>> reject(
+            @PathVariable UUID id,
+            @RequestBody(required = false) LogisticsDto.UpdateStatusRequest req) {
+
+        String reason = req == null ? null : req.reason();
+        return ResponseEntity.ok(
+                LogisticsDto.ApiResponse.ok(service.rejectAssignment(id, reason)));
     }
 
     /**

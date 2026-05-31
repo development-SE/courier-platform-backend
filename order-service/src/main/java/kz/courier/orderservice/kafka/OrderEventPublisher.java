@@ -1,6 +1,5 @@
 package kz.courier.orderservice.kafka;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import kz.courier.orderservice.model.Order;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -19,13 +18,44 @@ import java.util.UUID;
 public class OrderEventPublisher {
 
     private final KafkaTemplate<String, Object> kafkaTemplate;
-    private final ObjectMapper objectMapper;
 
     @Value("${kafka.topic.order-events:kafka-order-events}")
     private String orderEventsTopic;
 
     public void publishCreatedAfterCommit(Order order) {
-        OrderCreatedEvent event = OrderCreatedEvent.from(order);
+        OrderCreatedEvent event = OrderCreatedEvent.from("ORDER_CREATED", order);
+        Runnable publish = () -> publish(order.getId().toString(), event);
+
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    publish.run();
+                }
+            });
+        } else {
+            publish.run();
+        }
+    }
+
+    public void publishReadyAfterCommit(Order order) {
+        OrderCreatedEvent event = OrderCreatedEvent.from("ORDER_READY", order);
+        Runnable publish = () -> publish(order.getId().toString(), event);
+
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    publish.run();
+                }
+            });
+        } else {
+            publish.run();
+        }
+    }
+
+    public void publishStatusChangedAfterCommit(Order order) {
+        OrderCreatedEvent event = OrderCreatedEvent.from("ORDER_STATUS_CHANGED", order);
         Runnable publish = () -> publish(order.getId().toString(), event);
 
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
@@ -41,21 +71,16 @@ public class OrderEventPublisher {
     }
 
     private void publish(String key, OrderCreatedEvent event) {
-        try {
-            String json = objectMapper.writeValueAsString(event);
-            kafkaTemplate.send(orderEventsTopic, key, json)
-                    .whenComplete((result, ex) -> {
-                        if (ex != null) {
-                            log.error("[OrderEventPublisher] Failed to publish order-created orderId={}: {}",
-                                    key, ex.getMessage());
-                        } else {
-                            log.info("[OrderEventPublisher] Published order-created orderId={} topic={} offset={}",
-                                    key, orderEventsTopic, result.getRecordMetadata().offset());
-                        }
-                    });
-        } catch (Exception e) {
-            log.error("[OrderEventPublisher] Serialization failed orderId={}", key, e);
-        }
+        kafkaTemplate.send(orderEventsTopic, key, event)
+                .whenComplete((result, ex) -> {
+                    if (ex != null) {
+                        log.error("[OrderEventPublisher] Failed to publish order-created orderId={}: {}",
+                                key, ex.getMessage());
+                    } else {
+                        log.info("[OrderEventPublisher] Published order-created orderId={} topic={} offset={}",
+                                key, orderEventsTopic, result.getRecordMetadata().offset());
+                    }
+                });
     }
 
     public record OrderCreatedEvent(
@@ -67,12 +92,14 @@ public class OrderEventPublisher {
             Double pickupLongitude,
             Double deliveryLatitude,
             Double deliveryLongitude,
+            String status,
+            String serviceType,
             String parcelSize,
             OffsetDateTime createdAt
     ) {
-        static OrderCreatedEvent from(Order order) {
+        static OrderCreatedEvent from(String eventType, Order order) {
             return new OrderCreatedEvent(
-                    "ORDER_CREATED",
+                    eventType,
                     order.getId(),
                     order.getAuthorId(),
                     order.getCompanyId(),
@@ -80,6 +107,8 @@ public class OrderEventPublisher {
                     order.getPickupAddress() == null ? null : order.getPickupAddress().getLongitude(),
                     order.getDeliveryAddress() == null ? null : order.getDeliveryAddress().getLatitude(),
                     order.getDeliveryAddress() == null ? null : order.getDeliveryAddress().getLongitude(),
+                    order.getStatus() == null ? null : order.getStatus().name(),
+                    order.getServiceType() == null ? null : order.getServiceType().name(),
                     order.getParcelSize() == null ? null : order.getParcelSize().name(),
                     order.getCreatedAt()
             );

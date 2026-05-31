@@ -8,7 +8,8 @@ public enum NotificationEventType {
     EMAIL_VERIFICATION("email_verification"),
     PASSWORD_CHANGED("password_changed"),
     ACCOUNT_DELETED("account_deleted"),
-    DELIVERY_CONFIRMATION_CODE_CREATED("delivery_confirmation_code_created");
+    DELIVERY_CONFIRMATION_CODE_CREATED("delivery_confirmation_code_created"),
+    COURIER_ASSIGNMENT_OFFER_CREATED("courier_assignment_offer_created");
 
     private final String value;
 
@@ -22,7 +23,6 @@ public enum NotificationEventType {
 
     public static NotificationEventType fromValue(String value) {
         for (NotificationEventType t : values()) {
-            System.out.println("Comparing " + t.value + " with " + value);
             if (t.value.equalsIgnoreCase(value)) return t;
         }
         throw new IllegalArgumentException("Unknown notification type: " + value);

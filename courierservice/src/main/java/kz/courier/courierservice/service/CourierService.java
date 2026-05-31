@@ -45,28 +45,33 @@ public class CourierService {
     private final AuthGrpcClient authGrpcClient;
 
     public CourierDto.CourierProfileResponse create(CourierDto.CreateCourierRequest req) {
-        AuthGrpcClient.AuthUser targetUser = requireValidCourierAuthUser(req.userId());
         GatewayPrincipalProvider.GatewayPrincipal principal =
                 gatewayPrincipalProvider.requireCurrentPrincipal();
 
+        UUID resolvedUserId = req.userId();
         if (hasAnyRole(principal, "COURIER")) {
             req = normalizeSelfServiceCreate(req, gatewayPrincipalProvider.requireCurrentUserId());
+            resolvedUserId = req.userId();
         } else if (hasAnyRole(principal, "ADMIN", "SUPER_ADMIN")) {
             req = normalizePrivilegedCreate(req);
+            resolvedUserId = req.userId();
         } else if (hasAnyRole(principal, "DIRECTOR", "MANAGER")) {
             req = normalizeCompanyScopedCreate(req, requireCallerCompanyId(principal));
+            resolvedUserId = req.userId();
         } else {
             throw new BusinessException("FORBIDDEN",
                     "Only couriers or privileged users may create courier profiles");
         }
 
-        if (courierProfileRepository.existsByUserId(req.userId())) {
+        requireValidCourierAuthUser(resolvedUserId);
+
+        if (courierProfileRepository.existsById(resolvedUserId)) {
             throw new BusinessException("COURIER_ALREADY_EXISTS",
-                    "Courier profile already exists for user " + req.userId());
+                    "Courier profile already exists for user " + resolvedUserId);
         }
 
         CourierProfile profile = CourierProfile.builder()
-                .userId(req.userId())
+                .id(resolvedUserId)
                 .companyId(req.companyId())
                 .courierType(req.courierType())
                 .employmentStatus(req.employmentStatus())
@@ -117,7 +122,7 @@ public class CourierService {
 
     @Transactional(readOnly = true)
     public CourierDto.CourierProfileResponse getByUserId(UUID userId) {
-        CourierProfile profile = courierProfileRepository.findWithSchedulesByUserId(userId)
+        CourierProfile profile = courierProfileRepository.findWithSchedulesById(userId)
                 .orElseThrow(() -> new CourierNotFoundException(userId));
         requireCanReadProfile(profile);
         return toResponse(profile);
@@ -126,7 +131,7 @@ public class CourierService {
     @Transactional(readOnly = true)
     public CourierDto.CourierProfileResponse getCurrent() {
         UUID currentUserId = gatewayPrincipalProvider.requireCurrentUserId();
-        return courierProfileRepository.findWithSchedulesByUserId(currentUserId)
+        return courierProfileRepository.findWithSchedulesById(currentUserId)
                 .map(this::toResponse)
                 .orElseGet(() -> buildSelfRegisteredContractor(currentUserId));
     }
@@ -142,7 +147,7 @@ public class CourierService {
             requireSameCompany(profile, requireCallerCompanyId(principal));
             applyCompanyScopedUpdate(profile, req);
         } else if (hasAnyRole(principal, "COURIER")) {
-            requireSelf(profile.getUserId(), "update your courier profile");
+            requireSelf(profile.getId(), "update your courier profile");
             applyCourierSelfUpdate(profile, req);
         } else {
             throw new BusinessException("FORBIDDEN",
@@ -205,13 +210,14 @@ public class CourierService {
             CourierDto.CreateCourierRequest req,
             UUID callerUserId) {
 
-        if (!callerUserId.equals(req.userId())) {
+        UUID requestUserId = req.userId();
+        if (requestUserId != null && !callerUserId.equals(requestUserId)) {
             throw new BusinessException("FORBIDDEN",
                     "Couriers can only create their own profile");
         }
 
         return new CourierDto.CreateCourierRequest(
-                req.userId(),
+                callerUserId,
                 null,
                 CourierType.CONTRACTOR,
                 EmploymentStatus.ONBOARDING,
@@ -255,6 +261,9 @@ public class CourierService {
     }
 
     private void requireCreateBasics(CourierDto.CreateCourierRequest req) {
+        if (req.userId() == null) {
+            throw new BusinessException("INVALID_ARGUMENT", "userId is required");
+        }
         if (req.courierType() == null) {
             throw new BusinessException("INVALID_ARGUMENT", "courierType is required");
         }
@@ -274,7 +283,7 @@ public class CourierService {
             return;
         }
         if (hasAnyRole(principal, "COURIER")) {
-            requireSelf(profile.getUserId(), "read your courier profile");
+            requireSelf(profile.getId(), "read your courier profile");
             return;
         }
         throw new BusinessException("FORBIDDEN",
@@ -402,8 +411,7 @@ public class CourierService {
         }
 
         return CourierDto.CourierProfileResponse.builder()
-                .id(null)
-                .userId(userId)
+                .id(userId)
                 .companyId(null)
                 .courierType(CourierType.CONTRACTOR)
                 .employmentStatus(EmploymentStatus.ONBOARDING)
@@ -491,7 +499,6 @@ public class CourierService {
         LocalDateTime localDateTime = evaluatedAt.toLocalDateTime();
         return CourierDto.EligibilityResponse.builder()
                 .courierId(profile.getId())
-                .userId(profile.getUserId())
                 .eligible(eligible)
                 .reasonCode(reasonCode)
                 .message(message)
@@ -505,7 +512,6 @@ public class CourierService {
     private CourierDto.CourierProfileResponse toResponse(CourierProfile profile) {
         return CourierDto.CourierProfileResponse.builder()
                 .id(profile.getId())
-                .userId(profile.getUserId())
                 .companyId(profile.getCompanyId())
                 .courierType(profile.getCourierType())
                 .employmentStatus(profile.getEmploymentStatus())

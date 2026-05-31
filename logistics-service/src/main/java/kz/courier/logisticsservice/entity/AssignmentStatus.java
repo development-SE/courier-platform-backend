@@ -11,6 +11,7 @@ public enum AssignmentStatus {
 
     ACCEPTED("Courier accepted the order"),
     REJECTED("Courier rejected the order"),
+    TIMED_OUT("Courier offer timed out"),
 
     PICKED_UP("Picked up"),
     IN_TRANSIT("In transit"),
@@ -30,7 +31,8 @@ public enum AssignmentStatus {
         return this == DELIVERED
                 || this == CANCELLED
                 || this == FAILED
-                || this == MANUAL_REQUIRED;
+                || this == MANUAL_REQUIRED
+                || this == TIMED_OUT;
     }
 
     public boolean isActive() {
@@ -46,6 +48,7 @@ public enum AssignmentStatus {
             case PENDING -> newStatus == ASSIGNED
                     || newStatus == ACCEPTED
                     || newStatus == REJECTED
+                    || newStatus == TIMED_OUT
                     || newStatus == CANCELLED;
             case ASSIGNED -> newStatus == ACCEPTED
                     || newStatus == REJECTED
@@ -58,7 +61,7 @@ public enum AssignmentStatus {
             case ARRIVED -> newStatus == DELIVERED
                     || newStatus == FAILED
                     || newStatus == CANCELLED;
-            case REJECTED, DELIVERED, CANCELLED, FAILED, MANUAL_REQUIRED -> false;
+            case REJECTED, TIMED_OUT, DELIVERED, CANCELLED, FAILED, MANUAL_REQUIRED -> false;
         };
     }
 }

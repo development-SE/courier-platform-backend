@@ -6,6 +6,8 @@ import kz.courier.logisticsservice.entity.AssignmentHistory;
 import kz.courier.logisticsservice.entity.AssignmentStatus;
 import kz.courier.logisticsservice.entity.CourierAssignment;
 import kz.courier.logisticsservice.entity.CourierRoute;
+import kz.courier.logisticsservice.entity.RouteStatus;
+import kz.courier.logisticsservice.entity.RouteStopStatus;
 import kz.courier.logisticsservice.exception.AssignmentNotFoundException;
 import kz.courier.logisticsservice.exception.BusinessException;
 import kz.courier.logisticsservice.exception.LocationNotFoundException;
@@ -16,7 +18,9 @@ import kz.courier.logisticsservice.repository.AssignmentHistoryRepository;
 import kz.courier.logisticsservice.repository.AssignmentRepository;
 import kz.courier.logisticsservice.repository.CourierLocationRepository;
 import kz.courier.logisticsservice.repository.CourierRouteRepository;
+import kz.courier.logisticsservice.repository.RouteStopRepository;
 import kz.courier.logisticsservice.security.GatewayPrincipalProvider;
+import kz.courier.logisticsservice.security.SystemPrincipalRunner;
 import kz.courier.order.v1.OrderStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -41,7 +45,7 @@ public class LogisticsService {
 
     private static final List<AssignmentStatus> TERMINAL_ASSIGNMENT_STATUSES =
             List.of(AssignmentStatus.DELIVERED, AssignmentStatus.CANCELLED, AssignmentStatus.FAILED,
-                    AssignmentStatus.REJECTED, AssignmentStatus.MANUAL_REQUIRED);
+                    AssignmentStatus.REJECTED, AssignmentStatus.TIMED_OUT, AssignmentStatus.MANUAL_REQUIRED);
     private static final Set<OrderStatus> AUTO_ASSIGNABLE_ORDER_STATUSES =
             EnumSet.of(OrderStatus.NEW, OrderStatus.ACCEPTED, OrderStatus.PREPARING,
                     OrderStatus.READY, OrderStatus.ASSIGNED);
@@ -60,11 +64,14 @@ public class LogisticsService {
     private final AssignmentHistoryRepository historyRepository;
     private final CourierLocationRepository locationRepository;
     private final CourierRouteRepository routeRepository;
+    private final RouteStopRepository routeStopRepository;
     private final AssignmentMapper mapper;
     private final AssignmentEventPublisher eventPublisher;
     private final OrderGrpcClient orderGrpcClient;
     private final GatewayPrincipalProvider gatewayPrincipalProvider;
+    private final SystemPrincipalRunner systemPrincipalRunner;
     private final CapacityAwareAssignmentService capacityAwareAssignmentService;
+    private final AssignmentRetryScheduler assignmentRetryScheduler;
 
     // =========================================================================
     //  Assignment - Create
@@ -72,6 +79,7 @@ public class LogisticsService {
 
     @Transactional
     public LogisticsDto.AssignmentResponse createAssignment(LogisticsDto.CreateAssignmentRequest req) {
+        requireAdmin("create assignments");
         log.info("Creating assignment order={} courier={}", req.orderId(), req.courierId());
 
         return mapper.toResponse(createAssignmentInternal(
@@ -105,12 +113,48 @@ public class LogisticsService {
      */
     @Transactional
     public LogisticsDto.AutoAssignResponse autoAssign(UUID orderId) {
+        requireAdmin("auto-assign orders");
         return capacityAwareAssignmentService.autoAssign(orderId);
     }
 
     @Transactional
     public LogisticsDto.AssignmentResponse manualAssign(LogisticsDto.ManualAssignmentRequest req) {
+        requireAdmin("manual assignment");
         return capacityAwareAssignmentService.manualAssign(req);
+    }
+
+    @Transactional
+    public LogisticsDto.AssignmentResponse acceptAssignment(UUID id) {
+        CourierAssignment assignment = findAssignment(id);
+        if (assignment.getAssignmentStatus() != AssignmentStatus.PENDING) {
+            throw new BusinessException("INVALID_STATUS",
+                    "Only PENDING offers can be accepted by courier");
+        }
+        return updateStatus(id, new LogisticsDto.UpdateStatusRequest(
+                AssignmentStatus.ACCEPTED,
+                gatewayPrincipalProvider.requireCurrentUserId(),
+                "courier-accepted"));
+    }
+
+    @Transactional
+    public LogisticsDto.AssignmentResponse rejectAssignment(UUID id, String reason) {
+        CourierAssignment assignment = findAssignment(id);
+        if (assignment.getAssignmentStatus() != AssignmentStatus.PENDING
+                && assignment.getAssignmentStatus() != AssignmentStatus.ASSIGNED) {
+            throw new BusinessException("INVALID_STATUS",
+                    "Only PENDING or ASSIGNED assignments can be rejected by courier");
+        }
+        return updateStatus(id, new LogisticsDto.UpdateStatusRequest(
+                AssignmentStatus.REJECTED,
+                gatewayPrincipalProvider.requireCurrentUserId(),
+                reason == null || reason.isBlank() ? "courier-rejected" : reason));
+    }
+
+    @Transactional
+    public LogisticsDto.ApiResponse<String> retryManualRequiredNow() {
+        requireAdmin("retry manual-required assignments");
+        assignmentRetryScheduler.retryRetryableManualRequiredAssignmentsNow("admin-request");
+        return LogisticsDto.ApiResponse.ok("Manual-required retry triggered");
     }
 
     // =========================================================================
@@ -119,7 +163,9 @@ public class LogisticsService {
 
     @Transactional(readOnly = true)
     public LogisticsDto.AssignmentResponse getAssignment(UUID id) {
-        return mapper.toResponse(findAssignment(id));
+        CourierAssignment assignment = findAssignment(id);
+        requireCanReadAssignment(assignment);
+        return mapper.toResponse(assignment);
     }
 
     @Transactional(readOnly = true)
@@ -127,12 +173,13 @@ public class LogisticsService {
             UUID courierId, UUID orderId, AssignmentStatus status,
             int page, int pageSize, String sortBy, boolean descending) {
 
+        UUID effectiveCourierId = restrictAssignmentListCourierId(courierId);
         Sort sort = descending
                 ? Sort.by(sortBy).descending()
                 : Sort.by(sortBy).ascending();
 
         Page<CourierAssignment> result = assignmentRepository.findAllFiltered(
-                courierId, orderId, status,
+                effectiveCourierId, orderId, status,
                 PageRequest.of(page - 1, pageSize, sort));
 
         return mapper.toPagedResponse(result);
@@ -142,6 +189,7 @@ public class LogisticsService {
     public LogisticsDto.PagedManualRequiredAssignments listManualRequiredAssignments(
             int page, int pageSize, String sortBy, boolean descending) {
 
+        requireAdmin("list manual-required assignments");
         Sort sort = descending
                 ? Sort.by(sortBy).descending()
                 : Sort.by(sortBy).ascending();
@@ -177,7 +225,7 @@ public class LogisticsService {
         assignment.setAssignmentStatus(req.newStatus());
         applyTimestamps(assignment, req.newStatus());
         assignment = assignmentRepository.save(assignment);
-        releaseRouteCapacityIfFinished(assignment, req.newStatus());
+        handleTerminalOutcome(assignment, req.newStatus(), req.reason());
 
         UUID changedBy = gatewayPrincipalProvider.requireCurrentUserId();
         recordHistory(id, oldStatus, req.newStatus(), changedBy, req.reason());
@@ -274,9 +322,8 @@ public class LogisticsService {
 
     @Transactional(readOnly = true)
     public List<LogisticsDto.HistoryEntry> getHistory(UUID assignmentId) {
-        if (!assignmentRepository.existsById(assignmentId)) {
-            throw new AssignmentNotFoundException(assignmentId);
-        }
+        CourierAssignment assignment = findAssignment(assignmentId);
+        requireCanReadAssignment(assignment);
         return historyRepository
                 .findAllByAssignmentIdOrderByChangedAtAsc(assignmentId)
                 .stream()
@@ -316,6 +363,8 @@ public class LogisticsService {
                 courierId, req.latitude(), req.longitude(), req.isOnline());
 
         eventPublisher.publishLocationUpdated(courierId, req.latitude(), req.longitude(), req.isOnline());
+        log.debug("Location update stored courier={} online={}; manual-required retry remains scheduler/admin driven",
+                courierId, req.isOnline());
 
         return mapper.toLocationResponse(
                 locationRepository.findById(courierId)
@@ -363,6 +412,7 @@ public class LogisticsService {
 
         locationRepository.upsertOnlineStatus(courierId, req.isOnline());
         log.info("Courier {} is now {}", courierId, req.isOnline() ? "ONLINE" : "OFFLINE");
+        retryManualRequiredAssignmentsWhenOnline(req.isOnline(), "courier-online-status");
 
         return mapper.toLocationResponse(
                 locationRepository.findById(courierId)
@@ -422,6 +472,13 @@ public class LogisticsService {
                 "You may only " + action + " for your own courier profile");
     }
 
+    private void retryManualRequiredAssignmentsWhenOnline(boolean online, String trigger) {
+        if (!online) {
+            return;
+        }
+        assignmentRetryScheduler.retryRetryableManualRequiredAssignmentsNow(trigger);
+    }
+
     /**
      * Only the assigned courier may move their delivery assignment forward.
      * Managers/admins are allowed as explicit operational override.
@@ -441,6 +498,45 @@ public class LogisticsService {
 
         throw new BusinessException("FORBIDDEN",
                 "Only the assigned courier can " + action);
+    }
+
+    private void requireAdmin(String action) {
+        if (gatewayPrincipalProvider.hasAnyRole(PRIVILEGED_ASSIGNMENT_ROLES.toArray(String[]::new))) {
+            return;
+        }
+        throw new BusinessException("FORBIDDEN", "Only admins may " + action);
+    }
+
+    private void requireCanReadAssignment(CourierAssignment assignment) {
+        if (gatewayPrincipalProvider.hasAnyRole(PRIVILEGED_ASSIGNMENT_ROLES.toArray(String[]::new))) {
+            return;
+        }
+
+        UUID currentUserId = gatewayPrincipalProvider.requireCurrentUserId();
+        if (assignment.getCourierId() != null && currentUserId.equals(assignment.getCourierId())) {
+            return;
+        }
+
+        throw new BusinessException("FORBIDDEN",
+                "Only admins or the assigned courier may read this assignment");
+    }
+
+    private UUID restrictAssignmentListCourierId(UUID requestedCourierId) {
+        if (gatewayPrincipalProvider.hasAnyRole(PRIVILEGED_ASSIGNMENT_ROLES.toArray(String[]::new))) {
+            return requestedCourierId;
+        }
+
+        if (!gatewayPrincipalProvider.hasRole("COURIER")) {
+            throw new BusinessException("FORBIDDEN",
+                    "Only admins or couriers may list assignments");
+        }
+
+        UUID currentCourierId = gatewayPrincipalProvider.requireCurrentUserId();
+        if (requestedCourierId != null && !requestedCourierId.equals(currentCourierId)) {
+            throw new BusinessException("FORBIDDEN",
+                    "Couriers may only list their own assignments");
+        }
+        return currentCourierId;
     }
 
     private CourierAssignment createAssignmentInternal(
@@ -633,7 +729,8 @@ public class LogisticsService {
     private void validateTransition(AssignmentStatus from, AssignmentStatus to) {
         boolean valid = switch (from) {
             case PENDING -> to == AssignmentStatus.ASSIGNED || to == AssignmentStatus.ACCEPTED
-                    || to == AssignmentStatus.REJECTED || to == AssignmentStatus.CANCELLED;
+                    || to == AssignmentStatus.REJECTED || to == AssignmentStatus.TIMED_OUT
+                    || to == AssignmentStatus.CANCELLED;
             case ASSIGNED -> to == AssignmentStatus.ACCEPTED || to == AssignmentStatus.REJECTED
                     || to == AssignmentStatus.CANCELLED;
             case ACCEPTED -> to == AssignmentStatus.PICKED_UP || to == AssignmentStatus.CANCELLED;
@@ -655,6 +752,7 @@ public class LogisticsService {
             return;
         }
         boolean releasesCapacity = newStatus == AssignmentStatus.REJECTED
+                || newStatus == AssignmentStatus.TIMED_OUT
                 || newStatus == AssignmentStatus.DELIVERED
                 || newStatus == AssignmentStatus.CANCELLED
                 || newStatus == AssignmentStatus.FAILED;
@@ -671,6 +769,69 @@ public class LogisticsService {
                             route.getActiveOrdersCount() - 1));
                     routeRepository.save(route);
                 });
+    }
+
+    private void handleTerminalOutcome(CourierAssignment assignment, AssignmentStatus newStatus, String reason) {
+        releaseRouteCapacityIfFinished(assignment, newStatus);
+        cancelOutstandingRouteStops(assignment);
+        completeRouteIfNoActiveStops(assignment.getRouteId());
+
+        boolean reassignRequired = newStatus == AssignmentStatus.REJECTED
+                || newStatus == AssignmentStatus.TIMED_OUT
+                || newStatus == AssignmentStatus.CANCELLED
+                || newStatus == AssignmentStatus.FAILED;
+        if (!reassignRequired) {
+            return;
+        }
+
+        try {
+            systemPrincipalRunner.run(() -> {
+                orderGrpcClient.markAssignmentPending(assignment.getOrderId());
+                return null;
+            });
+        } catch (Exception ex) {
+            log.warn("Failed to set order={} to ASSIGNMENT_PENDING: {}",
+                    assignment.getOrderId(), ex.getMessage());
+        }
+
+        try {
+            systemPrincipalRunner.run(() -> capacityAwareAssignmentService.autoAssign(assignment.getOrderId()));
+        } catch (Exception ex) {
+            log.warn("Reassignment failed orderId={} oldStatus={} reason={} error={}",
+                    assignment.getOrderId(), newStatus, reason, ex.getMessage());
+        }
+    }
+
+    private void cancelOutstandingRouteStops(CourierAssignment assignment) {
+        if (assignment.getRouteId() == null) {
+            return;
+        }
+        var stops = routeStopRepository.findAllByRouteIdOrderBySequenceNumberAsc(assignment.getRouteId());
+        var changed = stops.stream()
+                .filter(stop -> assignment.getOrderId().equals(stop.getOrderId()))
+                .filter(stop -> stop.getStatus() != RouteStopStatus.COMPLETED
+                        && stop.getStatus() != RouteStopStatus.CANCELLED)
+                .peek(stop -> stop.setStatus(RouteStopStatus.CANCELLED))
+                .toList();
+        if (!changed.isEmpty()) {
+            routeStopRepository.saveAll(changed);
+        }
+    }
+
+    private void completeRouteIfNoActiveStops(UUID routeId) {
+        if (routeId == null) {
+            return;
+        }
+        routeRepository.findById(routeId).ifPresent(route -> {
+            var stops = routeStopRepository.findAllByRouteIdOrderBySequenceNumberAsc(routeId);
+            boolean hasActiveStops = stops.stream()
+                    .anyMatch(stop -> stop.getStatus() != RouteStopStatus.COMPLETED
+                            && stop.getStatus() != RouteStopStatus.CANCELLED);
+            if (!hasActiveStops && route.getStatus() == RouteStatus.ACTIVE) {
+                route.setStatus(RouteStatus.COMPLETED);
+                routeRepository.save(route);
+            }
+        });
     }
 
     private record CourierCandidateScore(
