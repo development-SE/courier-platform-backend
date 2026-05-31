@@ -41,6 +41,12 @@ eureka:
   instance:
     prefer-ip-address: true
 
+grpc:
+  client:
+    auth-service:
+      address: ${AUTH_GRPC_ADDRESS:discovery:///auth-service}
+      negotiationType: PLAINTEXT
+
 logging:
   level:
     root: INFO

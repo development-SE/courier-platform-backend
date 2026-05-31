@@ -26,9 +26,9 @@ public final class CourierDto {
     public record CreateCourierRequest(
             @NotNull UUID userId,
             UUID companyId,
-            @NotNull CourierType courierType,
-            @NotNull EmploymentStatus employmentStatus,
-            @NotNull TransportType transportType,
+            CourierType courierType,
+            EmploymentStatus employmentStatus,
+            TransportType transportType,
             boolean isVerified,
             boolean canTakeOrders,
             @Min(1) @Max(20) Integer maxActiveOrders,

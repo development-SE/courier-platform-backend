@@ -83,6 +83,15 @@ spring:
         # GET    /api/v1/logistics/assignments/{id}
         # PATCH  /api/v1/logistics/assignments/{id}/status
         # GET    /api/v1/logistics/assignments/{id}/history
+        - id: courier-service
+          uri: ${COURIER_SERVICE_URL:lb://courier-service}
+          predicates:
+            - Path=/api/v1/couriers/**
+          filters:
+            - name: JwtAuthenticationFilter
+            - name: LoggingFilter
+            - StripPrefix=2
+
         - id: logistics-service-assignments
           uri: ${LOGISTICS_SERVICE_URL:lb://logistics-service}
           predicates:
@@ -115,8 +124,6 @@ spring:
             - name: JwtAuthenticationFilter
             - name: LoggingFilter
             - StripPrefix=3   # /api/v1/notifications/devices -> /devices
-
-
 
       # Default Filters (applied to all routes)
       default-filters:

@@ -38,6 +38,7 @@ create_user_and_db "$ORDER_DB_NAME" "$ORDER_DB_USERNAME" "$ORDER_DB_PASSWORD"
 create_user_and_db "$COMPANY_DB_NAME" "$COMPANY_DB_USERNAME" "$COMPANY_DB_PASSWORD"
 create_user_and_db "$LOGISTICS_DB_NAME" "$LOGISTICS_DB_USERNAME" "$LOGISTICS_DB_PASSWORD"
 create_user_and_db "$NOTIFICATION_DB_NAME" "$NOTIFICATION_DB_USERNAME" "$NOTIFICATION_DB_PASSWORD"
+create_user_and_db "$COURIER_DB_NAME" "$COURIER_DB_USERNAME" "$COURIER_DB_PASSWORD"
 
 enable_extensions "$AUTH_DB_NAME" '"uuid-ossp"' '"pgcrypto"'
 enable_extensions "$USER_DB_NAME" '"uuid-ossp"'

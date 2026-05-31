@@ -97,6 +97,8 @@ message GetUserResponse {
   Role role = 7;
   bool is_email_verified = 8;
   google.protobuf.Timestamp created_at = 9;
+  bool is_active = 10;
+  optional string company_id = 11;
 }
 
 // Update user profile

@@ -52,7 +52,7 @@ public class CourierProfile {
     private EmploymentStatus employmentStatus;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "transport_type", nullable = false, length = 30)
+    @Column(name = "transport_type", length = 30)
     private TransportType transportType;
 
     @Column(name = "is_verified", nullable = false)

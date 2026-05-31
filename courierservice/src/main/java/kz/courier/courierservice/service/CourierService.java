@@ -5,18 +5,18 @@ import kz.courier.courierservice.entity.CourierProfile;
 import kz.courier.courierservice.entity.CourierType;
 import kz.courier.courierservice.entity.CourierWorkSchedule;
 import kz.courier.courierservice.entity.EmploymentStatus;
-import kz.courier.courierservice.entity.TransportType;
 import kz.courier.courierservice.exception.BusinessException;
 import kz.courier.courierservice.exception.CourierNotFoundException;
+import kz.courier.courierservice.grpc.AuthGrpcClient;
 import kz.courier.courierservice.repository.CourierProfileRepository;
 import kz.courier.courierservice.security.GatewayPrincipalProvider;
 import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Sort;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
@@ -25,6 +25,7 @@ import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -34,33 +35,30 @@ public class CourierService {
 
     private static final List<String> PRIVILEGED_ROLES =
             List.of("ADMIN", "SUPER_ADMIN", "MANAGER", "DIRECTOR");
+    private static final List<String> GLOBAL_ADMIN_ROLES =
+            List.of("ADMIN", "SUPER_ADMIN");
+    private static final List<String> COMPANY_SCOPED_ROLES =
+            List.of("MANAGER", "DIRECTOR");
 
     private final CourierProfileRepository courierProfileRepository;
     private final GatewayPrincipalProvider gatewayPrincipalProvider;
+    private final AuthGrpcClient authGrpcClient;
 
     public CourierDto.CourierProfileResponse create(CourierDto.CreateCourierRequest req) {
+        AuthGrpcClient.AuthUser targetUser = requireValidCourierAuthUser(req.userId());
+        GatewayPrincipalProvider.GatewayPrincipal principal =
+                gatewayPrincipalProvider.requireCurrentPrincipal();
 
-        boolean isPrivileged = gatewayPrincipalProvider.hasAnyRole("ADMIN", "SUPER_ADMIN");
-        if (!isPrivileged) {
-        UUID callerUserId = gatewayPrincipalProvider.requireCurrentUserId();
-        if (!callerUserId.equals(req.userId())) {
+        if (hasAnyRole(principal, "COURIER")) {
+            req = normalizeSelfServiceCreate(req, gatewayPrincipalProvider.requireCurrentUserId());
+        } else if (hasAnyRole(principal, "ADMIN", "SUPER_ADMIN")) {
+            req = normalizePrivilegedCreate(req);
+        } else if (hasAnyRole(principal, "DIRECTOR", "MANAGER")) {
+            req = normalizeCompanyScopedCreate(req, requireCallerCompanyId(principal));
+        } else {
             throw new BusinessException("FORBIDDEN",
-                    "Couriers can only create their own profile");
+                    "Only couriers or privileged users may create courier profiles");
         }
-        // force contractor defaults — courier cannot choose type or self-verify
-        req = new CourierDto.CreateCourierRequest(
-                req.userId(),
-                null,                        // no company
-                CourierType.CONTRACTOR,      // always contractor
-                EmploymentStatus.ONBOARDING, // always starts onboarding
-                req.transportType(),         // courier chooses transport
-                false,                       // isVerified = false
-                false,                       // canTakeOrders = false
-                1,                           // maxActiveOrders = 1
-                req.notes(),
-                null                         // no schedules
-        );
-    }
 
         if (courierProfileRepository.existsByUserId(req.userId())) {
             throw new BusinessException("COURIER_ALREADY_EXISTS",
@@ -87,20 +85,42 @@ public class CourierService {
 
     @Transactional(readOnly = true)
     public CourierDto.CourierProfileResponse get(UUID courierId) {
-        return toResponse(findWithSchedules(courierId));
+        CourierProfile profile = findWithSchedules(courierId);
+        requireCanReadProfile(profile);
+        return toResponse(profile);
     }
 
     @Transactional(readOnly = true)
     public Page<CourierDto.CourierProfileResponse> list(UUID companyId, int page, int size) {
+        GatewayPrincipalProvider.GatewayPrincipal principal =
+                gatewayPrincipalProvider.requireCurrentPrincipal();
+        UUID effectiveCompanyId = companyId;
+
+        if (hasAnyRole(principal, "ADMIN", "SUPER_ADMIN")) {
+            // Global admins may list all couriers or filter by any company.
+        } else if (hasAnyRole(principal, "DIRECTOR", "MANAGER")) {
+            UUID callerCompanyId = requireCallerCompanyId(principal);
+            if (companyId != null && !companyId.equals(callerCompanyId)) {
+                throw new BusinessException("FORBIDDEN",
+                        "Company-scoped users may only list couriers from their own company");
+            }
+            effectiveCompanyId = callerCompanyId;
+        } else {
+            throw new BusinessException("FORBIDDEN",
+                    "Only privileged roles may list courier profiles");
+        }
+
         Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
-        return courierProfileRepository.findAllFiltered(companyId, pageable)
+        return courierProfileRepository.findAllFiltered(effectiveCompanyId, pageable)
                 .map(this::toResponse);
     }
 
     @Transactional(readOnly = true)
     public CourierDto.CourierProfileResponse getByUserId(UUID userId) {
-        return toResponse(courierProfileRepository.findWithSchedulesByUserId(userId)
-                .orElseThrow(() -> new CourierNotFoundException(userId)));
+        CourierProfile profile = courierProfileRepository.findWithSchedulesByUserId(userId)
+                .orElseThrow(() -> new CourierNotFoundException(userId));
+        requireCanReadProfile(profile);
+        return toResponse(profile);
     }
 
     @Transactional(readOnly = true)
@@ -113,34 +133,20 @@ public class CourierService {
 
     public CourierDto.CourierProfileResponse update(UUID courierId, CourierDto.UpdateCourierRequest req) {
         CourierProfile profile = findWithSchedules(courierId);
+        GatewayPrincipalProvider.GatewayPrincipal principal =
+                gatewayPrincipalProvider.requireCurrentPrincipal();
 
-        if (req.companyId() != null) {
-            profile.setCompanyId(req.companyId());
-        }
-        if (req.courierType() != null) {
-            profile.setCourierType(req.courierType());
-        }
-        if (req.employmentStatus() != null) {
-            profile.setEmploymentStatus(req.employmentStatus());
-        }
-        if (req.transportType() != null) {
-            profile.setTransportType(req.transportType());
-        }
-        if (req.isVerified() != null) {
-            profile.setVerified(req.isVerified());
-        }
-        if (req.canTakeOrders() != null) {
-            profile.setCanTakeOrders(req.canTakeOrders());
-        }
-        if (req.maxActiveOrders() != null) {
-            profile.setMaxActiveOrders(req.maxActiveOrders());
-        }
-        if (req.notes() != null) {
-            profile.setNotes(blankToNull(req.notes()));
-        }
-        if (req.schedules() != null) {
-            validateScheduleExpectation(profile.getCourierType(), req.schedules());
-            replaceSchedules(profile, req.schedules());
+        if (hasAnyRole(principal, "ADMIN", "SUPER_ADMIN")) {
+            applyPrivilegedUpdate(profile, req);
+        } else if (hasAnyRole(principal, "DIRECTOR", "MANAGER")) {
+            requireSameCompany(profile, requireCallerCompanyId(principal));
+            applyCompanyScopedUpdate(profile, req);
+        } else if (hasAnyRole(principal, "COURIER")) {
+            requireSelf(profile.getUserId(), "update your courier profile");
+            applyCourierSelfUpdate(profile, req);
+        } else {
+            throw new BusinessException("FORBIDDEN",
+                    "You do not have permission to update courier profiles");
         }
 
         return toResponse(courierProfileRepository.save(profile));
@@ -148,9 +154,8 @@ public class CourierService {
 
     @Transactional(readOnly = true)
     public CourierDto.EligibilityResponse getEligibility(UUID courierId, OffsetDateTime at) {
-        requirePrivilegedReader();
-
         CourierProfile profile = findWithSchedules(courierId);
+        requirePrivilegedReader(profile);
         OffsetDateTime evaluatedAt = at != null ? at : OffsetDateTime.now();
 
         if (profile.getEmploymentStatus() != EmploymentStatus.ACTIVE) {
@@ -179,11 +184,216 @@ public class CourierService {
                 "CONTRACTOR_AVAILABLE", "Contractor courier is eligible");
     }
 
-    private void requirePrivilegedReader() {
-        if (!gatewayPrincipalProvider.hasAnyRole(PRIVILEGED_ROLES.toArray(String[]::new))) {
-            throw new BusinessException("FORBIDDEN",
-                    "Only privileged roles may read courier eligibility");
+    private AuthGrpcClient.AuthUser requireValidCourierAuthUser(UUID userId) {
+        if (userId == null) {
+            throw new BusinessException("INVALID_ARGUMENT", "userId is required");
         }
+
+        AuthGrpcClient.AuthUser user = authGrpcClient.getUser(userId);
+        if (!"COURIER".equals(user.role())) {
+            throw new BusinessException("USER_NOT_COURIER",
+                    "Courier profiles can only be created for auth users with role COURIER");
+        }
+        if (!user.active()) {
+            throw new BusinessException("AUTH_USER_INACTIVE",
+                    "Courier profile cannot be created for an inactive auth user");
+        }
+        return user;
+    }
+
+    private CourierDto.CreateCourierRequest normalizeSelfServiceCreate(
+            CourierDto.CreateCourierRequest req,
+            UUID callerUserId) {
+
+        if (!callerUserId.equals(req.userId())) {
+            throw new BusinessException("FORBIDDEN",
+                    "Couriers can only create their own profile");
+        }
+
+        return new CourierDto.CreateCourierRequest(
+                req.userId(),
+                null,
+                CourierType.CONTRACTOR,
+                EmploymentStatus.ONBOARDING,
+                req.transportType(),
+                false,
+                false,
+                1,
+                req.notes(),
+                null
+        );
+    }
+
+    private CourierDto.CreateCourierRequest normalizePrivilegedCreate(CourierDto.CreateCourierRequest req) {
+        requireCreateBasics(req);
+        return req;
+    }
+
+    private CourierDto.CreateCourierRequest normalizeCompanyScopedCreate(
+            CourierDto.CreateCourierRequest req,
+            UUID callerCompanyId) {
+
+        requireCreateBasics(req);
+        UUID targetCompanyId = req.companyId() != null ? req.companyId() : callerCompanyId;
+        if (!callerCompanyId.equals(targetCompanyId)) {
+            throw new BusinessException("FORBIDDEN",
+                    "Company-scoped users may only create couriers for their own company");
+        }
+
+        return new CourierDto.CreateCourierRequest(
+                req.userId(),
+                callerCompanyId,
+                req.courierType(),
+                req.employmentStatus(),
+                req.transportType(),
+                req.isVerified(),
+                req.canTakeOrders(),
+                req.maxActiveOrders(),
+                req.notes(),
+                req.schedules()
+        );
+    }
+
+    private void requireCreateBasics(CourierDto.CreateCourierRequest req) {
+        if (req.courierType() == null) {
+            throw new BusinessException("INVALID_ARGUMENT", "courierType is required");
+        }
+        if (req.employmentStatus() == null) {
+            throw new BusinessException("INVALID_ARGUMENT", "employmentStatus is required");
+        }
+    }
+
+    private void requireCanReadProfile(CourierProfile profile) {
+        GatewayPrincipalProvider.GatewayPrincipal principal =
+                gatewayPrincipalProvider.requireCurrentPrincipal();
+        if (hasAnyRole(principal, "ADMIN", "SUPER_ADMIN")) {
+            return;
+        }
+        if (hasAnyRole(principal, "DIRECTOR", "MANAGER")) {
+            requireSameCompany(profile, requireCallerCompanyId(principal));
+            return;
+        }
+        if (hasAnyRole(principal, "COURIER")) {
+            requireSelf(profile.getUserId(), "read your courier profile");
+            return;
+        }
+        throw new BusinessException("FORBIDDEN",
+                "You do not have permission to read courier profiles");
+    }
+
+    private void requirePrivilegedReader(CourierProfile profile) {
+        GatewayPrincipalProvider.GatewayPrincipal principal =
+                gatewayPrincipalProvider.requireCurrentPrincipal();
+        if (hasAnyRole(principal, GLOBAL_ADMIN_ROLES.toArray(String[]::new))) {
+            return;
+        }
+        if (hasAnyRole(principal, COMPANY_SCOPED_ROLES.toArray(String[]::new))) {
+            requireSameCompany(profile, requireCallerCompanyId(principal));
+            return;
+        }
+        throw new BusinessException("FORBIDDEN",
+                "Only privileged roles may read courier eligibility");
+    }
+
+    private void applyPrivilegedUpdate(CourierProfile profile, CourierDto.UpdateCourierRequest req) {
+        if (req.companyId() != null) {
+            profile.setCompanyId(req.companyId());
+        }
+        if (req.courierType() != null) {
+            profile.setCourierType(req.courierType());
+        }
+        if (req.employmentStatus() != null) {
+            profile.setEmploymentStatus(req.employmentStatus());
+        }
+        if (req.transportType() != null) {
+            profile.setTransportType(req.transportType());
+        }
+        if (req.isVerified() != null) {
+            profile.setVerified(req.isVerified());
+        }
+        if (req.canTakeOrders() != null) {
+            profile.setCanTakeOrders(req.canTakeOrders());
+        }
+        if (req.maxActiveOrders() != null) {
+            profile.setMaxActiveOrders(req.maxActiveOrders());
+        }
+        if (req.notes() != null) {
+            profile.setNotes(blankToNull(req.notes()));
+        }
+        if (req.schedules() != null) {
+            validateScheduleExpectation(profile.getCourierType(), req.schedules());
+            replaceSchedules(profile, req.schedules());
+        }
+    }
+
+    private void applyCompanyScopedUpdate(CourierProfile profile, CourierDto.UpdateCourierRequest req) {
+        if (req.companyId() != null && !req.companyId().equals(profile.getCompanyId())) {
+            throw new BusinessException("FORBIDDEN",
+                    "Company-scoped users cannot move couriers between companies");
+        }
+        applyPrivilegedUpdate(profile, new CourierDto.UpdateCourierRequest(
+                null,
+                req.courierType(),
+                req.employmentStatus(),
+                req.transportType(),
+                req.isVerified(),
+                req.canTakeOrders(),
+                req.maxActiveOrders(),
+                req.notes(),
+                req.schedules()
+        ));
+    }
+
+    private void applyCourierSelfUpdate(CourierProfile profile, CourierDto.UpdateCourierRequest req) {
+        if (req.companyId() != null
+                || req.courierType() != null
+                || req.employmentStatus() == EmploymentStatus.ACTIVE
+                || req.isVerified() != null
+                || Boolean.TRUE.equals(req.canTakeOrders())
+                || req.schedules() != null) {
+            throw new BusinessException("FORBIDDEN",
+                    "Couriers cannot self-verify, activate, join companies, enable orders, or set schedules");
+        }
+        if (req.transportType() != null) {
+            profile.setTransportType(req.transportType());
+        }
+        if (req.notes() != null) {
+            profile.setNotes(blankToNull(req.notes()));
+        }
+    }
+
+    private UUID requireCallerCompanyId(GatewayPrincipalProvider.GatewayPrincipal principal) {
+        AuthGrpcClient.AuthUser caller = authGrpcClient.getUser(UUID.fromString(principal.userId()));
+        if (caller.companyId() == null) {
+            throw new BusinessException("FORBIDDEN",
+                    "Company-scoped users must belong to a company");
+        }
+        return caller.companyId();
+    }
+
+    private void requireSameCompany(CourierProfile profile, UUID callerCompanyId) {
+        if (profile.getCompanyId() == null || !profile.getCompanyId().equals(callerCompanyId)) {
+            throw new BusinessException("FORBIDDEN",
+                    "Company-scoped users may only manage couriers from their own company");
+        }
+    }
+
+    private void requireSelf(UUID profileUserId, String action) {
+        UUID currentUserId = gatewayPrincipalProvider.requireCurrentUserId();
+        if (!currentUserId.equals(profileUserId)) {
+            throw new BusinessException("FORBIDDEN",
+                    "Couriers may only " + action);
+        }
+    }
+
+    private boolean hasAnyRole(GatewayPrincipalProvider.GatewayPrincipal principal, String... roles) {
+        Set<String> currentRoles = principal.roles();
+        for (String role : roles) {
+            if (currentRoles.contains(role)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private CourierDto.CourierProfileResponse buildSelfRegisteredContractor(UUID userId) {
@@ -197,7 +407,7 @@ public class CourierService {
                 .companyId(null)
                 .courierType(CourierType.CONTRACTOR)
                 .employmentStatus(EmploymentStatus.ONBOARDING)
-                .transportType((TransportType) null)
+                .transportType(null)
                 .isVerified(false)
                 .canTakeOrders(false)
                 .maxActiveOrders(1)

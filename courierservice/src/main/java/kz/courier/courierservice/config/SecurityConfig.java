@@ -41,9 +41,9 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.GET, "/couriers", "/couriers/**")
                     .hasAnyRole("ADMIN", "SUPER_ADMIN", "MANAGER", "DIRECTOR")
                 .requestMatchers(HttpMethod.POST, "/couriers")
-                    .hasAnyRole("ADMIN", "SUPER_ADMIN", "COURIER")
+                    .hasAnyRole("ADMIN", "SUPER_ADMIN", "MANAGER", "DIRECTOR", "COURIER")
                 .requestMatchers(HttpMethod.PUT, "/couriers/**")
-                    .hasAnyRole("ADMIN", "SUPER_ADMIN")
+                    .hasAnyRole("ADMIN", "SUPER_ADMIN", "MANAGER", "DIRECTOR", "COURIER")
                 .anyRequest().authenticated()
             )
                 .exceptionHandling(ex -> ex.accessDeniedHandler(accessDeniedHandler()));
