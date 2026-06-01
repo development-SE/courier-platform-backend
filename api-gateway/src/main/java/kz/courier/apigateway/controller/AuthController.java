@@ -173,11 +173,10 @@ public class AuthController {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(ApiResponse.error("FORBIDDEN", "Only privileged users can view users"));
         }
-
         String filterRole = role == null || role.isBlank() ? "ADMIN" : role.trim().toUpperCase();
-        if (!List.of("ADMIN", "COURIER").contains(filterRole)) {
+        if (!List.of("ADMIN", "COURIER", "CLIENT", "PARTNER", "DIRECTOR", "MANAGER", "SUPER_ADMIN").contains(filterRole)) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(ApiResponse.error("INVALID_ROLE", "Only ADMIN or COURIER users can be listed here"));
+                    .body(ApiResponse.error("INVALID_ROLE", "Invalid role specified for listing"));
         }
         if ("ADMIN".equals(filterRole) && !"SUPER_ADMIN".equals(actor.role())) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)

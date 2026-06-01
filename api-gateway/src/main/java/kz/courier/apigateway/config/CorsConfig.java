@@ -18,7 +18,7 @@ public class CorsConfig {
 
         config.setAllowedOriginPatterns(Arrays.asList(
                 "http://localhost:*",
-                "http://127.0.0.1:*",
+                "http://172.29.144.1:*",
                 "http://192.168.*.*:*",
                 "http://10.*.*.*:*",
                 "http://172.16.*.*:*"

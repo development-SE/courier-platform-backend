@@ -716,6 +716,9 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
         if (isPrivileged(caller)) {
             return;
         }
+        if (caller != null && caller.hasRole("COURIER")) {
+            return;
+        }
 
         UUID callerId = parseUuid(caller.userId(), "caller userId");
         boolean ownUserOrder = callerId.equals(order.getAuthorId());

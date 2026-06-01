@@ -69,9 +69,18 @@ spring:
             - StripPrefix=2   # /api/v1/users/... → /users/...
 
         - id: company-service
-          uri: ${COMPANY_SERVICE_URL:lb://companyservice}
+          uri: ${COMPANY_SERVICE_URL:lb://company-service}
           predicates:
             - Path=/api/v1/companies/**,/api/v1/employees/**,/api/v1/addresses/**
+          filters:
+            - name: JwtAuthenticationFilter
+            - name: LoggingFilter
+            - StripPrefix=2
+
+        - id: courier-service
+          uri: ${COURIER_SERVICE_URL:lb://courier-service}
+          predicates:
+            - Path=/api/v1/couriers/**
           filters:
             - name: JwtAuthenticationFilter
             - name: LoggingFilter
@@ -108,7 +117,7 @@ spring:
 
         # Notification Service - device token registration and push helpers.
         - id: notification
-          uri: ${NOTIFICATION_SERVICE_URL:lb://notification}
+          uri: ${NOTIFICATION_SERVICE_URL:lb://notification-service}
           predicates:
             - Path=/api/v1/notifications/**
           filters:

@@ -44,7 +44,7 @@ public class LogisticsService {
                     OrderStatus.READY, OrderStatus.ASSIGNED);
     private static final double AUTO_ASSIGN_RADIUS_METERS = 5_000.0;
     private static final int AUTO_ASSIGN_LIMIT = 20;
-    private static final long MAX_LOCATION_AGE_MINUTES = 10;
+    private static final long MAX_LOCATION_AGE_MINUTES = 120;
     private static final double AVERAGE_COURIER_SPEED_METERS_PER_MINUTE = 250.0;
     private static final double DISTANCE_WEIGHT = 0.80;
     private static final double FRESHNESS_WEIGHT = 0.20;
@@ -442,6 +442,12 @@ public class LogisticsService {
 
         if (currentUserId.equals(targetCourierId)) {
             return;
+        }
+
+        if ("read courier location".equals(action)) {
+            if (gatewayPrincipalProvider.hasAnyRole("CLIENT", "USER", "ADMIN", "SUPER_ADMIN")) {
+                return;
+            }
         }
 
         if (gatewayPrincipalProvider.hasAnyRole(PRIVILEGED_LOCATION_ROLES.toArray(String[]::new))) {

@@ -81,6 +81,14 @@ public class UserAddressController {
         return ResponseEntity.ok(addressService.list(userId, page, size));
     }
 
+    @GetMapping("/addresses")
+    @PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN')")
+    public ResponseEntity<UserAddressDto.PageResponse> listAllUserAddresses(
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        return ResponseEntity.ok(addressService.listAll(page, size));
+    }
+
     private UUID currentUserId(Authentication authentication) {
         if (authentication == null || authentication.getPrincipal() == null) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "AUTH_REQUIRED: Missing authenticated user");
