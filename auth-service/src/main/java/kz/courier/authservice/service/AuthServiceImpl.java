@@ -65,6 +65,8 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
     private String apiBaseUrl;
     @Value("${app.api.verify-path}")
     private String apiVerifyPath;
+    @Value("${jwt.access-expiry-min}")
+    private long accessExpiryMin;
 
     @Override
     public void register(RegisterRequest req, StreamObserver<RegisterResponse> responseObserver) {
@@ -279,7 +281,7 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
                     .setAccessToken(access)
                     .setRefreshToken(refresh)
                     .setExpiresAt(Timestamp.newBuilder()
-                            .setSeconds(Instant.now().getEpochSecond() + 15 * 60)
+                            .setSeconds(Instant.now().plusSeconds(accessExpiryMin * 60).getEpochSecond())
                             .build())
                     .setRole(kz.courier.auth.v1.Role.valueOf(user.getRole().name()))
                     .build();
@@ -312,7 +314,7 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
                     .setAccessToken(access)
                     .setRefreshToken(newRefresh)
                     .setExpiresAt(Timestamp.newBuilder()
-                            .setSeconds(Instant.now().getEpochSecond() + 15 * 60)
+                            .setSeconds(Instant.now().plusSeconds(accessExpiryMin * 60).getEpochSecond())
                             .build())
                     .build();
 
@@ -350,9 +352,17 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
         try {
             UUID userId = UUID.fromString(req.getUserId());
             User user = userRepo.findById(userId)
-                    .orElseThrow(() -> new IllegalArgumentException("User not found"));
+                    .orElse(null);
+            if (user == null) {
+                resp.onNext(GetUserResponse.newBuilder()
+                        .setResponse(errorResponse("USER_NOT_FOUND", "User not found"))
+                        .build());
+                resp.onCompleted();
+                return;
+            }
 
             GetUserResponse reply = GetUserResponse.newBuilder()
+                    .setResponse(successResponse())
                     .setUserId(user.getId().toString())
                     .setEmail(user.getEmail())
                     .setFirstName(user.getFirstName())
@@ -363,10 +373,21 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
                     .setCreatedAt(Timestamp.newBuilder()
                             .setSeconds(user.getCreatedAt().toEpochSecond(ZoneOffset.UTC))
                             .build())
+                    .setIsActive(user.isActive())
                     .build();
+            if (user.getCompanyId() != null) {
+                reply = reply.toBuilder()
+                        .setCompanyId(user.getCompanyId().toString())
+                        .build();
+            }
             resp.onNext(reply);
             resp.onCompleted();
 
+        } catch (IllegalArgumentException e) {
+            resp.onNext(GetUserResponse.newBuilder()
+                    .setResponse(errorResponse("INVALID_USER_ID", "Invalid user id"))
+                    .build());
+            resp.onCompleted();
         } catch (Exception e) {
             resp.onError(Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
         }
@@ -498,18 +519,24 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
                         .setTotalPages(usersPage.getTotalPages())
                         .build());
 
-        usersPage.forEach(u -> builder.addUsers(GetUserResponse.newBuilder()
-                .setUserId(u.getId().toString())
-                .setEmail(u.getEmail())
-                .setFirstName(u.getFirstName())
-                .setLastName(u.getLastName())
-                .setPhone(u.getPhone() != null ? u.getPhone() : "")
-                .setRole(kz.courier.auth.v1.Role.valueOf(u.getRole().name()))
-                .setIsEmailVerified(u.isEmailVerified())
-                .setCreatedAt(Timestamp.newBuilder()
-                        .setSeconds(u.getCreatedAt().toEpochSecond(ZoneOffset.UTC))
-                        .build())
-                .build()));
+        usersPage.forEach(u -> {
+            GetUserResponse.Builder userBuilder = GetUserResponse.newBuilder()
+                    .setUserId(u.getId().toString())
+                    .setEmail(u.getEmail())
+                    .setFirstName(u.getFirstName())
+                    .setLastName(u.getLastName())
+                    .setPhone(u.getPhone() != null ? u.getPhone() : "")
+                    .setRole(kz.courier.auth.v1.Role.valueOf(u.getRole().name()))
+                    .setIsEmailVerified(u.isEmailVerified())
+                    .setCreatedAt(Timestamp.newBuilder()
+                            .setSeconds(u.getCreatedAt().toEpochSecond(ZoneOffset.UTC))
+                            .build())
+                    .setIsActive(u.isActive());
+            if (u.getCompanyId() != null) {
+                userBuilder.setCompanyId(u.getCompanyId().toString());
+            }
+            builder.addUsers(userBuilder.build());
+        });
 
         resp.onNext(builder.build());
         resp.onCompleted();

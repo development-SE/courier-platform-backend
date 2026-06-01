@@ -5,6 +5,7 @@ import kz.courier.courierservice.dto.CourierDto;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -54,6 +55,27 @@ public class GlobalExceptionHandler {
         }
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(CourierDto.ApiResponse.error("INVALID_ARGUMENT", message));
+    }
+
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<CourierDto.ApiResponse<Void>> handleMethodNotSupported(
+            HttpRequestMethodNotSupportedException ex,
+            HttpServletRequest request) {
+        String supported = ex.getSupportedHttpMethods() == null || ex.getSupportedHttpMethods().isEmpty()
+                ? ""
+                : ex.getSupportedHttpMethods().stream()
+                        .map(method -> method.name())
+                        .collect(Collectors.joining(", "));
+
+        String message = supported.isBlank()
+                ? "HTTP method is not supported for this endpoint"
+                : "HTTP method is not supported. Allowed methods: " + supported;
+
+        log.warn("Method not allowed path={} method={} supported={}", request.getRequestURI(),
+                ex.getMethod(), supported);
+
+        return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED)
+                .body(CourierDto.ApiResponse.error("METHOD_NOT_ALLOWED", message));
     }
 
     @ExceptionHandler(Exception.class)

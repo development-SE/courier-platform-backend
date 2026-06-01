@@ -8,8 +8,12 @@ import kz.courier.order.v1.GetOrderRequest;
 import kz.courier.order.v1.GetOrderResponse;
 import kz.courier.order.v1.OrderServiceGrpc;
 import kz.courier.order.v1.OrderStatus;
+import kz.courier.order.v1.ParcelSize;
 import kz.courier.order.v1.ResendDeliveryConfirmationCodeRequest;
 import kz.courier.order.v1.ResendDeliveryConfirmationCodeResponse;
+import kz.courier.order.v1.ServiceType;
+import kz.courier.order.v1.UpdateOrderStatusRequest;
+import kz.courier.order.v1.UpdateOrderStatusResponse;
 import kz.courier.order.v1.VerifyDeliveryCodeRequest;
 import kz.courier.order.v1.VerifyDeliveryCodeResponse;
 import lombok.RequiredArgsConstructor;
@@ -66,13 +70,47 @@ public class OrderGrpcClient {
                 throw new BusinessException("ORDER_PICKUP_LOCATION_MISSING",
                         "Order " + orderId + " does not have pickup coordinates");
             }
+            if (!response.hasDeliveryAddress()) {
+                throw new BusinessException("ORDER_DELIVERY_LOCATION_MISSING",
+                        "Order " + orderId + " does not have delivery coordinates");
+            }
 
             return new OrderSnapshot(
                     UUID.fromString(response.getOrderId()),
                     response.getStatus(),
+                    response.getServiceType(),
+                    parseOptionalUuid(response.getCompanyId()),
                     response.getPickupAddress().getLatitude(),
                     response.getPickupAddress().getLongitude(),
-                    buildPickupLabel(response));
+                    response.getDeliveryAddress().getLatitude(),
+                    response.getDeliveryAddress().getLongitude(),
+                    response.hasParcelSize() ? response.getParcelSize() : ParcelSize.SMALL,
+                    response.getItemsList().stream().mapToInt(item -> item.getQuantity()).sum(),
+                    buildPickupLabel(response),
+                    Instant.ofEpochSecond(
+                            response.getCreatedAt().getSeconds(),
+                            response.getCreatedAt().getNanos()).atOffset(ZoneOffset.UTC));
+        } catch (StatusRuntimeException ex) {
+            throw mapGrpcError(orderId, ex);
+        }
+    }
+
+    public void markAssignmentPending(UUID orderId) {
+        GatewayPrincipalProvider.GatewayPrincipal principal =
+                gatewayPrincipalProvider.requireCurrentPrincipal();
+        try {
+            UpdateOrderStatusResponse response = authenticatedStub(principal).updateOrderStatus(
+                    UpdateOrderStatusRequest.newBuilder()
+                            .setOrderId(orderId.toString())
+                            .setNewStatus(OrderStatus.ASSIGNMENT_PENDING)
+                            .setReason("reassignment-required")
+                            .build());
+
+            if (response.hasResponse() && !response.getResponse().getSuccess()) {
+                throw new BusinessException(
+                        response.getResponse().getError().getCode(),
+                        response.getResponse().getError().getMessage());
+            }
         } catch (StatusRuntimeException ex) {
             throw mapGrpcError(orderId, ex);
         }
@@ -166,15 +204,34 @@ public class OrderGrpcClient {
         return String.format("%s, %s %s", pickup.getCity(), pickup.getStreet(), pickup.getHouse()).trim();
     }
 
+    private UUID parseOptionalUuid(String rawUuid) {
+        if (rawUuid == null || rawUuid.isBlank()) {
+            return null;
+        }
+        try {
+            return UUID.fromString(rawUuid);
+        } catch (IllegalArgumentException ex) {
+            log.warn("Ignoring malformed companyId from order-service value={}", rawUuid);
+            return null;
+        }
+    }
+
     /**
      * Minimal order snapshot needed by the auto-assignment workflow.
      */
     public record OrderSnapshot(
             UUID orderId,
             OrderStatus status,
+            ServiceType serviceType,
+            UUID companyId,
             double pickupLatitude,
             double pickupLongitude,
-            String pickupAddressLabel
+            double deliveryLatitude,
+            double deliveryLongitude,
+            ParcelSize parcelSize,
+            int itemQuantity,
+            String pickupAddressLabel,
+            OffsetDateTime createdAt
     ) {}
 
     public record ResendDeliveryCodeResult(

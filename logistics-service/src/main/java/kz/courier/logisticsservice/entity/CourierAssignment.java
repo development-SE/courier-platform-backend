@@ -24,8 +24,11 @@ public class CourierAssignment {
     @Column(name = "order_id", nullable = false)
     private UUID orderId;
 
-    @Column(name = "courier_id", nullable = false)
+    @Column(name = "courier_id")
     private UUID courierId;
+
+    @Column(name = "route_id")
+    private UUID routeId;
 
     @Column(name = "assigned_by")
     private UUID assignedBy;
@@ -54,6 +57,45 @@ public class CourierAssignment {
 
     @Column(name = "actual_duration_minutes")
     private Integer actualDurationMinutes;
+
+    @Column(name = "score")
+    private Double score;
+
+    @Column(name = "demand_units")
+    private Integer demandUnits;
+
+    @Column(name = "assignment_policy", length = 30)
+    @Enumerated(EnumType.STRING)
+    private AssignmentPolicy assignmentPolicy;
+
+    @Column(name = "failure_reason", length = 50)
+    @Enumerated(EnumType.STRING)
+    private AssignmentFailureReason failureReason;
+
+    @Column(name = "failure_message")
+    private String failureMessage;
+
+    @Column(name = "scanned_candidates")
+    private Integer scannedCandidates;
+
+    @Column(name = "eligible_candidates")
+    private Integer eligibleCandidates;
+
+    @Column(name = "retry_count", nullable = false)
+    @Builder.Default
+    private Integer retryCount = 0;
+
+    @Column(name = "last_retry_at")
+    private OffsetDateTime lastRetryAt;
+
+    @Column(name = "next_retry_at")
+    private OffsetDateTime nextRetryAt;
+
+    @Column(name = "resolved_at")
+    private OffsetDateTime resolvedAt;
+
+    @Column(name = "resolved_assignment_id")
+    private UUID resolvedAssignmentId;
 
     @Column(name = "rejection_reason")
     private String rejectionReason;

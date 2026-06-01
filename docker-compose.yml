@@ -12,6 +12,8 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      TZ: ${APP_TIME_ZONE:-Asia/Qyzylorda}
+      PGTZ: ${APP_TIME_ZONE:-Asia/Qyzylorda}
       AUTH_DB_NAME: ${AUTH_DB_NAME}
       AUTH_DB_USERNAME: ${AUTH_DB_USERNAME}
       AUTH_DB_PASSWORD: ${AUTH_DB_PASSWORD}
@@ -24,6 +26,9 @@ services:
       LOGISTICS_DB_NAME: ${LOGISTICS_DB_NAME}
       LOGISTICS_DB_USERNAME: ${LOGISTICS_DB_USERNAME}
       LOGISTICS_DB_PASSWORD: ${LOGISTICS_DB_PASSWORD}
+      COURIER_DB_NAME: ${COURIER_DB_NAME}
+      COURIER_DB_USERNAME: ${COURIER_DB_USERNAME}
+      COURIER_DB_PASSWORD: ${COURIER_DB_PASSWORD}
       ORDER_DB_NAME: ${ORDER_DB_NAME}
       ORDER_DB_USERNAME: ${ORDER_DB_USERNAME}
       ORDER_DB_PASSWORD: ${ORDER_DB_PASSWORD}
@@ -101,6 +106,7 @@ services:
       EUREKA_SERVER_NAME: ${EUREKA_SERVER_NAME}
       EUREKA_HOST: ${EUREKA_HOST}
       EUREKA_SELF_URL: ${EUREKA_SELF_URL}
+      TZ: ${APP_TIME_ZONE:-Asia/Qyzylorda}
     ports:
       - "${EUREKA_SERVER_PORT}:${EUREKA_SERVER_PORT}"
 
@@ -123,6 +129,7 @@ services:
       EUREKA_DEFAULT_ZONE: ${EUREKA_DEFAULT_ZONE}
       API_BASE_URL: ${API_BASE_URL}
       API_VERIFY_PATH: ${API_VERIFY_PATH}
+      TZ: ${APP_TIME_ZONE:-Asia/Qyzylorda}
     depends_on:
       postgres:
         condition: service_healthy
@@ -147,6 +154,7 @@ services:
       USER_DB_PASSWORD: ${USER_DB_PASSWORD}
       JWT_SECRET: ${JWT_SECRET}
       EUREKA_DEFAULT_ZONE: ${EUREKA_DEFAULT_ZONE}
+      TZ: ${APP_TIME_ZONE:-Asia/Qyzylorda}
     depends_on:
       postgres:
         condition: service_healthy
@@ -170,6 +178,7 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       EUREKA_DEFAULT_ZONE: ${EUREKA_DEFAULT_ZONE}
       AUTH_GRPC_ADDRESS: ${AUTH_GRPC_ADDRESS}
+      TZ: ${APP_TIME_ZONE:-Asia/Qyzylorda}
     depends_on:
       postgres:
         condition: service_healthy
@@ -177,6 +186,32 @@ services:
         condition: service_started
     ports:
       - "${COMPANY_SERVICE_PORT}:${COMPANY_SERVICE_PORT}"
+
+  courier-service:
+    <<: *app-common
+    container_name: courier-courier-service
+    build:
+      context: .
+      dockerfile: courierservice/Dockerfile
+    environment:
+      COURIER_SERVICE_PORT: ${COURIER_SERVICE_PORT}
+      COURIER_SERVICE_NAME: ${COURIER_SERVICE_NAME}
+      COURIER_DB_URL: ${COURIER_DB_URL}
+      COURIER_DB_USERNAME: ${COURIER_DB_USERNAME}
+      COURIER_DB_PASSWORD: ${COURIER_DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      EUREKA_DEFAULT_ZONE: ${EUREKA_DEFAULT_ZONE}
+      AUTH_GRPC_ADDRESS: ${AUTH_GRPC_ADDRESS}
+      TZ: ${APP_TIME_ZONE:-Asia/Qyzylorda}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      eureka-server:
+        condition: service_started
+      auth-service:
+        condition: service_started
+    ports:
+      - "${COURIER_SERVICE_PORT}:${COURIER_SERVICE_PORT}"
 
   logistics-service:
     <<: *app-common
@@ -193,6 +228,8 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS}
       EUREKA_DEFAULT_ZONE: ${EUREKA_DEFAULT_ZONE}
       ORDER_GRPC_ADDRESS: ${ORDER_GRPC_ADDRESS}
+      COURIER_SERVICE_URL: ${COURIER_SERVICE_URL}
+      TZ: ${APP_TIME_ZONE:-Asia/Qyzylorda}
     depends_on:
       postgres:
         condition: service_healthy
@@ -227,6 +264,7 @@ services:
       FIREBASE_ENABLED: ${FIREBASE_ENABLED}
       FIREBASE_CREDENTIALS_PATH: ${FIREBASE_CREDENTIALS_PATH}
       EXPO_PUSH_URL: ${EXPO_PUSH_URL}
+      TZ: ${APP_TIME_ZONE:-Asia/Qyzylorda}
     depends_on:
       postgres:
         condition: service_healthy
@@ -254,6 +292,7 @@ services:
       EUREKA_DEFAULT_ZONE: ${EUREKA_DEFAULT_ZONE}
       ORDER_EVENTS_TOPIC: ${ORDER_EVENTS_TOPIC}
       NOTIFICATION_KAFKA_TOPIC: ${NOTIFICATION_KAFKA_TOPIC}
+      TZ: ${APP_TIME_ZONE:-Asia/Qyzylorda}
     depends_on:
       postgres:
         condition: service_healthy
@@ -275,6 +314,7 @@ services:
       API_GATEWAY_SERVICE_NAME: ${API_GATEWAY_SERVICE_NAME}
       USER_SERVICE_URL: ${USER_SERVICE_URL}
       COMPANY_SERVICE_URL: ${COMPANY_SERVICE_URL}
+      COURIER_SERVICE_URL: ${COURIER_SERVICE_URL}
       LOGISTICS_SERVICE_URL: ${LOGISTICS_SERVICE_URL}
       NOTIFICATION_SERVICE_URL: ${NOTIFICATION_SERVICE_URL}
       REDIS_URL: ${REDIS_URL}
@@ -282,6 +322,7 @@ services:
       AUTH_GRPC_ADDRESS: ${AUTH_GRPC_ADDRESS}
       ORDER_GRPC_ADDRESS: ${ORDER_GRPC_ADDRESS}
       JWT_SECRET: ${JWT_SECRET}
+      TZ: ${APP_TIME_ZONE:-Asia/Qyzylorda}
     depends_on:
       redis:
         condition: service_healthy
@@ -292,6 +333,8 @@ services:
       user-service:
         condition: service_started
       company-service:
+        condition: service_started
+      courier-service:
         condition: service_started
       logistics-service:
         condition: service_started

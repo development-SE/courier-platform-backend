@@ -14,6 +14,7 @@ import kz.courier.orderservice.dto.OrderFilter;
 import kz.courier.orderservice.exception.OrderNotFoundException;
 import kz.courier.orderservice.exception.OrderServiceException;
 import kz.courier.orderservice.mapper.OrderMapper;
+import kz.courier.orderservice.kafka.OrderEventPublisher;
 import kz.courier.orderservice.model.*;
 import kz.courier.orderservice.model.Address;
 import kz.courier.orderservice.model.Order;
@@ -67,6 +68,7 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
     private final ContactRepository contactRepository;
     private final ObjectMapper      objectMapper;
     private final DeliveryConfirmationService deliveryConfirmationService;
+    private final OrderEventPublisher orderEventPublisher;
 
     // ─────────────────────────────────────────────────────────────────────────
     //  CreateOrder
@@ -122,11 +124,18 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
                     .pickupContact(pickupContact)
                     .itemsJson(itemsJson)
                     .totalAmount(totalAmount)
-                    .status(kz.courier.orderservice.model.OrderStatus.NEW)
+                    .parcelSize(resolveParcelSize(request))
+                    .status(companyId == null
+                            ? kz.courier.orderservice.model.OrderStatus.READY
+                            : kz.courier.orderservice.model.OrderStatus.NEW)
                     .build();
 
             order = orderRepository.save(order);
             log.info("[gRPC] Order created id={}", order.getId());
+            orderEventPublisher.publishCreatedAfterCommit(order);
+            if (order.getStatus() == kz.courier.orderservice.model.OrderStatus.READY) {
+                orderEventPublisher.publishReadyAfterCommit(order);
+            }
 
             send(responseObserver,
                     CreateOrderResponse.newBuilder()
@@ -136,6 +145,8 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
                             .setRecipientContactId(recipientContact.getId().toString())
                             .setPickupAddrId(pickupAddr.getId().toString())
                             .setPickupContactId(pickupContact.getId().toString())
+                            .setCurrentStatus(kz.courier.order.v1.OrderStatus.valueOf(order.getStatus().name()))
+                            .setServiceType(kz.courier.order.v1.ServiceType.valueOf(order.getServiceType().name()))
                             .build());
 
         } catch (IllegalArgumentException e) {
@@ -262,6 +273,10 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
 
             order.setStatus(newStatus);
             orderRepository.save(order);
+            orderEventPublisher.publishStatusChangedAfterCommit(order);
+            if (newStatus == kz.courier.orderservice.model.OrderStatus.READY) {
+                orderEventPublisher.publishReadyAfterCommit(order);
+            }
 
             send(responseObserver,
                     UpdateOrderStatusResponse.newBuilder()
@@ -703,6 +718,24 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
             total = total.add(lineTotal);
         }
         return total;
+    }
+
+    private kz.courier.orderservice.model.ParcelSize resolveParcelSize(CreateOrderRequest request) {
+        if (request.hasParcelSize()
+                && request.getParcelSize() != kz.courier.order.v1.ParcelSize.PARCEL_SIZE_UNSPECIFIED) {
+            return kz.courier.orderservice.model.ParcelSize.valueOf(request.getParcelSize().name());
+        }
+
+        int totalQuantity = request.getItemsList().stream()
+                .mapToInt(OrderItem::getQuantity)
+                .sum();
+        if (totalQuantity <= 1) {
+            return kz.courier.orderservice.model.ParcelSize.SMALL;
+        }
+        if (totalQuantity <= 3) {
+            return kz.courier.orderservice.model.ParcelSize.MEDIUM;
+        }
+        return kz.courier.orderservice.model.ParcelSize.LARGE;
     }
 
     private void requireSameIfPresent(UUID requestedId, UUID allowedId, String fieldName) {

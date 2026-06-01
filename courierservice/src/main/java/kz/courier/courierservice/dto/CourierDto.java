@@ -24,11 +24,11 @@ public final class CourierDto {
     private CourierDto() {}
 
     public record CreateCourierRequest(
-            @NotNull UUID userId,
+            UUID userId,
             UUID companyId,
-            @NotNull CourierType courierType,
-            @NotNull EmploymentStatus employmentStatus,
-            @NotNull TransportType transportType,
+            CourierType courierType,
+            EmploymentStatus employmentStatus,
+            TransportType transportType,
             boolean isVerified,
             boolean canTakeOrders,
             @Min(1) @Max(20) Integer maxActiveOrders,
@@ -59,7 +59,6 @@ public final class CourierDto {
     @Builder
     public record CourierProfileResponse(
             UUID id,
-            UUID userId,
             UUID companyId,
             CourierType courierType,
             EmploymentStatus employmentStatus,
@@ -86,7 +85,6 @@ public final class CourierDto {
     @Builder
     public record EligibilityResponse(
             UUID courierId,
-            UUID userId,
             boolean eligible,
             String reasonCode,
             String message,

@@ -61,6 +61,24 @@ public class AssignmentController {
                 .body(LogisticsDto.ApiResponse.ok(service.autoAssign(orderId)));
     }
 
+    /**
+     * Dispatcher/admin-selected courier assignment with the same capacity and
+     * route feasibility checks as auto-assignment.
+     */
+    @PostMapping("/manual")
+    public ResponseEntity<LogisticsDto.ApiResponse<LogisticsDto.AssignmentResponse>> manualAssign(
+            @Valid @RequestBody LogisticsDto.ManualAssignmentRequest req) {
+
+        return ResponseEntity
+                .status(HttpStatus.CREATED)
+                .body(LogisticsDto.ApiResponse.ok(service.manualAssign(req)));
+    }
+
+    @PostMapping("/manual-required/retry")
+    public ResponseEntity<LogisticsDto.ApiResponse<String>> retryManualRequired() {
+        return ResponseEntity.ok(service.retryManualRequiredNow());
+    }
+
     // ── Read ──────────────────────────────────────────────────────────────────
 
     @GetMapping("/{id}")
@@ -68,6 +86,18 @@ public class AssignmentController {
             @PathVariable UUID id) {
 
         return ResponseEntity.ok(LogisticsDto.ApiResponse.ok(service.getAssignment(id)));
+    }
+
+    @GetMapping("/manual-required")
+    public ResponseEntity<LogisticsDto.ApiResponse<LogisticsDto.PagedManualRequiredAssignments>> manualRequired(
+            @RequestParam(defaultValue = "1")          int page,
+            @RequestParam(defaultValue = "20")         int pageSize,
+            @RequestParam(defaultValue = "createdAt")  String sortBy,
+            @RequestParam(defaultValue = "false")      boolean desc) {
+
+        return ResponseEntity.ok(
+                LogisticsDto.ApiResponse.ok(
+                        service.listManualRequiredAssignments(page, pageSize, sortBy, desc)));
     }
 
     /**
@@ -113,6 +143,24 @@ public class AssignmentController {
 
         return ResponseEntity.ok(
                 LogisticsDto.ApiResponse.ok(service.updateStatus(id, req)));
+    }
+
+    @PostMapping("/{id}/accept")
+    public ResponseEntity<LogisticsDto.ApiResponse<LogisticsDto.AssignmentResponse>> accept(
+            @PathVariable UUID id) {
+
+        return ResponseEntity.ok(
+                LogisticsDto.ApiResponse.ok(service.acceptAssignment(id)));
+    }
+
+    @PostMapping("/{id}/reject")
+    public ResponseEntity<LogisticsDto.ApiResponse<LogisticsDto.AssignmentResponse>> reject(
+            @PathVariable UUID id,
+            @RequestBody(required = false) LogisticsDto.UpdateStatusRequest req) {
+
+        String reason = req == null ? null : req.reason();
+        return ResponseEntity.ok(
+                LogisticsDto.ApiResponse.ok(service.rejectAssignment(id, reason)));
     }
 
     /**

@@ -4,10 +4,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import kz.courier.logisticsservice.entity.AssignmentStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
 
+import java.time.Instant;
 import java.time.OffsetDateTime;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -35,11 +39,20 @@ public class AssignmentEventPublisher {
     private final KafkaTemplate<String, String> kafkaTemplate;
     private final ObjectMapper objectMapper;
 
+    @Value("${notification.kafka.topic:notification-kafka-topic}")
+    private String notificationTopic;
+
     // ── Assignment created ────────────────────────────────────────────────────
 
     public void publishAssignmentCreated(UUID assignmentId, UUID orderId, UUID courierId) {
+        publishAssignmentCreated(assignmentId, orderId, courierId, AssignmentStatus.ASSIGNED);
+    }
+
+    public void publishAssignmentCreated(UUID assignmentId, UUID orderId, UUID courierId,
+                                         AssignmentStatus assignmentStatus) {
         publish(TOPIC_CREATED, assignmentId.toString(), new AssignmentCreatedEvent(
-                assignmentId, orderId, courierId, OffsetDateTime.now()));
+                assignmentId, orderId, courierId, assignmentStatus, OffsetDateTime.now()));
+        publishCourierOfferNotification(assignmentId, orderId, courierId, assignmentStatus);
     }
 
     // ── Status transition ─────────────────────────────────────────────────────
@@ -77,12 +90,33 @@ public class AssignmentEventPublisher {
         }
     }
 
+    private void publishCourierOfferNotification(UUID assignmentId, UUID orderId, UUID courierId,
+                                                 AssignmentStatus assignmentStatus) {
+        if (assignmentStatus != AssignmentStatus.PENDING || courierId == null) {
+            return;
+        }
+
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("assignment_id", assignmentId.toString());
+        payload.put("order_id", orderId.toString());
+
+        Map<String, Object> event = new LinkedHashMap<>();
+        event.put("event_id", UUID.randomUUID().toString());
+        event.put("user_id", courierId.toString());
+        event.put("type", "courier_assignment_offer_created");
+        event.put("payload", payload);
+        event.put("created_at", Instant.now().toString());
+
+        publish(notificationTopic, courierId.toString(), event);
+    }
+
     // ── Event records ─────────────────────────────────────────────────────────
 
     public record AssignmentCreatedEvent(
             UUID assignmentId,
             UUID orderId,
             UUID courierId,
+            AssignmentStatus assignmentStatus,
             OffsetDateTime occurredAt
     ) {}
 

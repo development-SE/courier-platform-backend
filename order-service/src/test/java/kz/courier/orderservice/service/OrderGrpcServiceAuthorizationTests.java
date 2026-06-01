@@ -12,6 +12,7 @@ import kz.courier.order.v1.UpdateOrderStatusResponse;
 import kz.courier.orderservice.model.Order;
 import kz.courier.orderservice.model.OrderStatus;
 import kz.courier.orderservice.model.ServiceType;
+import kz.courier.orderservice.kafka.OrderEventPublisher;
 import kz.courier.orderservice.repository.AddressRepository;
 import kz.courier.orderservice.repository.ContactRepository;
 import kz.courier.orderservice.repository.OrderRepository;
@@ -53,6 +54,9 @@ class OrderGrpcServiceAuthorizationTests {
     @Mock
     private DeliveryConfirmationService deliveryConfirmationService;
 
+    @Mock
+    private OrderEventPublisher orderEventPublisher;
+
     private OrderGrpcService service;
 
     @BeforeEach
@@ -62,7 +66,8 @@ class OrderGrpcServiceAuthorizationTests {
                 addressRepository,
                 contactRepository,
                 new ObjectMapper(),
-                deliveryConfirmationService
+                deliveryConfirmationService,
+                orderEventPublisher
         );
     }
 

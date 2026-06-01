@@ -10,11 +10,17 @@ spring:
     username: ${COMPANY_DB_USERNAME:company_svc}
     password: ${COMPANY_DB_PASSWORD:company_secret}
     driver-class-name: org.postgresql.Driver
+    hikari:
+      connection-init-sql: SET TIME ZONE 'Asia/Qyzylorda'
 
   jpa:
     hibernate:
       ddl-auto: none
     show-sql: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: Asia/Qyzylorda
 
 
   flyway:

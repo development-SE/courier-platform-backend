@@ -10,11 +10,17 @@ spring:
     username: ${USER_DB_USERNAME:user_svc}
     password: ${USER_DB_PASSWORD:user_secret}
     driver-class-name: org.postgresql.Driver
+    hikari:
+      connection-init-sql: SET TIME ZONE 'Asia/Qyzylorda'
 
   jpa:
     hibernate:
       ddl-auto: none
     show-sql: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: Asia/Qyzylorda
 
   flyway:
     locations: classpath:db/migration
@@ -22,6 +28,7 @@ spring:
 
 jwt:
   secret: ${JWT_SECRET:my-super-secret-key-at-least-32chars!!}  # must match auth-service
+  allowed-clock-skew-seconds: ${JWT_ALLOWED_CLOCK_SKEW_SECONDS:300}
 
 management:
   endpoints:

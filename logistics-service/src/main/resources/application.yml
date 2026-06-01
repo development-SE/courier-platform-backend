@@ -16,6 +16,7 @@ spring:
       connection-timeout: 20000
       idle-timeout: 300000
       max-lifetime: 1200000
+      connection-init-sql: SET TIME ZONE 'Asia/Qyzylorda'
 
   jpa:
     hibernate:
@@ -26,7 +27,7 @@ spring:
         dialect: org.hibernate.dialect.PostgreSQLDialect
         format_sql: true
         jdbc:
-          time_zone: UTC
+          time_zone: Asia/Qyzylorda
 
   flyway:
     enabled: true
@@ -62,6 +63,31 @@ grpc:
     order-service:
       address: ${ORDER_GRPC_ADDRESS:discovery:///order-service}
       negotiationType: PLAINTEXT
+
+courier-service:
+  base-url: ${COURIER_SERVICE_URL:http://localhost:8087}
+
+kafka:
+  topic:
+    order-events: ${ORDER_EVENTS_TOPIC:kafka-order-events}
+
+assignment:
+  employee-search-timeout-seconds: ${ASSIGNMENT_EMPLOYEE_SEARCH_TIMEOUT_SECONDS:120}
+  standard-batching-window-seconds: ${ASSIGNMENT_STANDARD_BATCHING_WINDOW_SECONDS:0}
+  offer-timeout:
+    enabled: ${ASSIGNMENT_OFFER_TIMEOUT_ENABLED:true}
+    fixed-delay-ms: ${ASSIGNMENT_OFFER_TIMEOUT_FIXED_DELAY_MS:15000}
+    seconds: ${ASSIGNMENT_OFFER_TIMEOUT_SECONDS:90}
+    batch-size: ${ASSIGNMENT_OFFER_TIMEOUT_BATCH_SIZE:20}
+  system:
+    user-id: ${ASSIGNMENT_SYSTEM_USER_ID:00000000-0000-0000-0000-000000000001}
+    roles: ${ASSIGNMENT_SYSTEM_ROLES:ADMIN,SUPER_ADMIN}
+  retry:
+    enabled: ${ASSIGNMENT_RETRY_ENABLED:true}
+    fixed-delay-ms: ${ASSIGNMENT_RETRY_FIXED_DELAY_MS:60000}
+    delay-seconds: ${ASSIGNMENT_RETRY_DELAY_SECONDS:60}
+    max-attempts: ${ASSIGNMENT_RETRY_MAX_ATTEMPTS:5}
+    batch-size: ${ASSIGNMENT_RETRY_BATCH_SIZE:10}
 
 management:
   endpoints:

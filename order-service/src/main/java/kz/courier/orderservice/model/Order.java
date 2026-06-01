@@ -69,6 +69,11 @@ public class Order {
     private BigDecimal totalAmount = BigDecimal.ZERO;
 
     @Enumerated(EnumType.STRING)
+    @Column(name = "parcel_size", nullable = false, length = 20)
+    @Builder.Default
+    private ParcelSize parcelSize = ParcelSize.SMALL;
+
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     @Builder.Default
     private OrderStatus status = OrderStatus.NEW;

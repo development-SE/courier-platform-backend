@@ -10,10 +10,16 @@ spring:
     username: ${AUTH_DB_USERNAME:auth_svc}
     password: ${AUTH_DB_PASSWORD:auth_secret}
     driver-class-name: org.postgresql.Driver
+    hikari:
+      connection-init-sql: SET TIME ZONE 'Asia/Qyzylorda'
   jpa:
     hibernate:
       ddl-auto: none
     show-sql: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: Asia/Qyzylorda
   flyway:
     locations: classpath:db/migration
     baseline-on-migrate: true

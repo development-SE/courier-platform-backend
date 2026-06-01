@@ -3,6 +3,7 @@ package kz.courier.apigateway.controller;
 import java.time.OffsetDateTime;
 import java.util.Map;
 
+import io.jsonwebtoken.ExpiredJwtException;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -27,7 +28,6 @@ import kz.courier.apigateway.grpc.OrderClient;
 import kz.courier.apigateway.security.JwtUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-
 
 /**
  * REST facade for the order-service gRPC API.
@@ -178,9 +178,13 @@ public class OrderController {
             String companyId = claims.get("companyId", String.class);
             log.debug("[OrderController] Auth extracted: userId={} roles={}", userId, roles);
             return AuthContext.of(userId, roles != null ? roles : "", token, companyId);
+        } catch (ExpiredJwtException e) {
+            log.warn("[OrderController] JWT expired at {} for request token",
+                    e.getClaims() != null ? e.getClaims().getExpiration() : "unknown");
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "JWT_EXPIRED");
         } catch (Exception e) {
             log.warn("[OrderController] Failed to extract JWT claims: {}", e.getMessage());
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid or expired token");
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "JWT_INVALID");
         }
     }
 

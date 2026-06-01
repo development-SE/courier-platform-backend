@@ -7,6 +7,8 @@ spring:
     username: ${NOTIFICATION_DB_USERNAME:notification_svc}
     password: ${NOTIFICATION_DB_PASSWORD:notification_secret}
     driver-class-name: org.postgresql.Driver
+    hikari:
+      connection-init-sql: SET TIME ZONE 'Asia/Qyzylorda'
 
   jpa:
     hibernate:
@@ -16,7 +18,7 @@ spring:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
         jdbc:
-          time_zone: UTC
+          time_zone: Asia/Qyzylorda
 
   flyway:
     enabled: true
@@ -44,7 +46,7 @@ spring:
     properties:
       mail:
         smtp:
-          auth: true32
+          auth: true
           starttls:
             enable: true
 

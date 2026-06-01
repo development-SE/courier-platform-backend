@@ -61,10 +61,13 @@ public class OrderClient {
             log.info("gRPC CreateOrder request");
 
             CreateOrderRequest.Builder grpcReq = CreateOrderRequest.newBuilder()
-                    .setServiceType(ServiceType.valueOf(request.getServiceType()))
+                    .setServiceType(parseRequiredEnum("serviceType", request.getServiceType(), ServiceType.class))
                     .setComment(request.getComment() != null ? request.getComment() : "");
             if (request.getCompanyId() != null && !request.getCompanyId().isBlank()) {
                 grpcReq.setCompanyId(request.getCompanyId());
+            }
+            if (request.getParcelSize() != null && !request.getParcelSize().isBlank()) {
+                grpcReq.setParcelSize(parseRequiredEnum("parcelSize", request.getParcelSize(), ParcelSize.class));
             }
 
             if (request.getItems() != null) {
@@ -81,7 +84,11 @@ public class OrderClient {
             if (request.getDeliveryAddress() != null) {
                 var a = request.getDeliveryAddress();
                 var b = Address.newBuilder()
-                        .setType(AddressType.valueOf(a.getType()))
+                        .setType(
+                            a.getType() == null
+                                ? AddressType.ADDRESS_TYPE_UNSPECIFIED
+                                : parseRequiredEnum("deliveryAddress.type", a.getType(), AddressType.class)
+                        )
                         .setCity(a.getCity())
                         .setStreet(a.getStreet())
                         .setHouse(a.getHouse())
@@ -105,7 +112,11 @@ public class OrderClient {
             if (request.getPickupAddress() != null) {
                 var a = request.getPickupAddress();
                 var b = Address.newBuilder()
-                        .setType(AddressType.valueOf(a.getType()))
+                        .setType(
+                            a.getType() == null
+                                ? AddressType.ADDRESS_TYPE_UNSPECIFIED
+                                : parseRequiredEnum("pickupAddress.type", a.getType(), AddressType.class)
+                        )
                         .setCity(a.getCity())
                         .setStreet(a.getStreet())
                         .setHouse(a.getHouse())
@@ -138,9 +149,13 @@ public class OrderClient {
 
             return ApiResponse.success(Map.of(
                     "orderId", grpcResponse.getOrderId(),
-                    "status",  "NEW"
+                    "status", grpcResponse.getCurrentStatus().name(),
+                    "serviceType", grpcResponse.getServiceType().name()
             ));
 
+        } catch (IllegalArgumentException e) {
+            log.warn("Invalid create order request: {}", e.getMessage());
+            return ApiResponse.error("INVALID_ARGUMENT", e.getMessage());
         } catch (StatusRuntimeException e) {
             return handleGrpcError(e);
         } catch (Exception e) {
@@ -180,7 +195,7 @@ public class OrderClient {
 
             UpdateOrderStatusRequest.Builder req = UpdateOrderStatusRequest.newBuilder()
                     .setOrderId(orderId)
-                    .setNewStatus(OrderStatus.valueOf(request.getNewStatus()));
+                    .setNewStatus(parseRequiredEnum("newStatus", request.getNewStatus(), OrderStatus.class));
 
             if (request.getReason() != null) req.setReason(request.getReason());
 
@@ -197,6 +212,9 @@ public class OrderClient {
                     "currentStatus", grpcResponse.getCurrentStatus().name()
             ));
 
+        } catch (IllegalArgumentException e) {
+            log.warn("Invalid update order status request: {}", e.getMessage());
+            return ApiResponse.error("INVALID_ARGUMENT", e.getMessage());
         } catch (StatusRuntimeException e) {
             return handleGrpcError(e);
         } catch (Exception e) {
@@ -220,7 +238,9 @@ public class OrderClient {
 
             if (filter.getUserId() != null && !filter.getUserId().isBlank()) req.setUserId(filter.getUserId());
             if (filter.getCompanyId() != null && !filter.getCompanyId().isBlank()) req.setCompanyId(filter.getCompanyId());
-            if (filter.getStatus() != null && !filter.getStatus().isBlank()) req.setStatus(OrderStatus.valueOf(filter.getStatus()));
+            if (filter.getStatus() != null && !filter.getStatus().isBlank()) {
+                req.setStatus(parseRequiredEnum("status", filter.getStatus(), OrderStatus.class));
+            }
             if (filter.getFromDate() != null) req.setCreatedAfter(toTimestamp(filter.getFromDate()));
             if (filter.getToDate() != null) req.setCreatedBefore(toTimestamp(filter.getToDate()));
             if (filter.getMinAmount() != null) req.setMinAmount(filter.getMinAmount());
@@ -252,6 +272,9 @@ public class OrderClient {
                     )
             ));
 
+        } catch (IllegalArgumentException e) {
+            log.warn("Invalid list orders request: {}", e.getMessage());
+            return ApiResponse.error("INVALID_ARGUMENT", e.getMessage());
         } catch (StatusRuntimeException e) {
             return handleGrpcError(e);
         } catch (Exception e) {
@@ -321,6 +344,9 @@ public class OrderClient {
         }
         if (grpcResponse.hasDeliveryConfirmationCode()) {
             data.put("deliveryConfirmationCode", grpcResponse.getDeliveryConfirmationCode());
+        }
+        if (grpcResponse.hasParcelSize()) {
+            data.put("parcelSize", grpcResponse.getParcelSize().name());
         }
 
         Instant createdAt = toInstantOrNull(grpcResponse.getCreatedAt());
@@ -425,6 +451,19 @@ public class OrderClient {
         }
 
         return data;
+    }
+
+    private <E extends Enum<E>> E parseRequiredEnum(String field, String rawValue, Class<E> enumClass) {
+        if (rawValue == null || rawValue.isBlank()) {
+            throw new IllegalArgumentException(field + " is required");
+        }
+        try {
+            return Enum.valueOf(enumClass, rawValue.trim().toUpperCase());
+        } catch (IllegalArgumentException ex) {
+            throw new IllegalArgumentException(
+                    field + " has invalid value '" + rawValue + "'. Allowed: " +
+                            java.util.Arrays.toString(enumClass.getEnumConstants()));
+        }
     }
 
     // ── Error handling ────────────────────────────────────────────────────────

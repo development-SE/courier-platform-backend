@@ -5,6 +5,7 @@ public enum OrderStatus {
     ACCEPTED,
     PREPARING,
     READY,
+    ASSIGNMENT_PENDING,
     ASSIGNED,
     PICKED_UP,
     IN_TRANSIT,

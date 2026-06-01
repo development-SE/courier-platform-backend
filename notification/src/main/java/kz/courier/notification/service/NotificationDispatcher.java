@@ -19,6 +19,7 @@ public class NotificationDispatcher {
 
     private final EmailService emailService;
     private final DeliveryConfirmationPushService deliveryConfirmationPushService;
+    private final CourierOfferPushService courierOfferPushService;
 
     public void dispatch(NotificationEvent event) {
         if (event.getType() == null || event.getType().isBlank()) {
@@ -34,6 +35,8 @@ public class NotificationDispatcher {
                 case ACCOUNT_DELETED    -> handleAccountDeleted(event);
                 case DELIVERY_CONFIRMATION_CODE_CREATED ->
                         deliveryConfirmationPushService.sendDeliveryConfirmationCode(event);
+                case COURIER_ASSIGNMENT_OFFER_CREATED ->
+                        courierOfferPushService.sendCourierOffer(event);
             }
         } catch (IllegalArgumentException ex) {
             log.warn("Unknown event type '{}' — skipping. eventId={}", event.getType(), event.getEventId());

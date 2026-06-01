@@ -56,11 +56,12 @@ public class CourierController {
         return ResponseEntity.ok(CourierDto.ApiResponse.ok(courierService.get(id)));
     }
 
-    @GetMapping("/by-user/{userId}")
-    public ResponseEntity<CourierDto.ApiResponse<CourierDto.CourierProfileResponse>> getByUserId(
-            @PathVariable UUID userId) {
-        return ResponseEntity.ok(CourierDto.ApiResponse.ok(courierService.getByUserId(userId)));
-    }
+//    shadowed by endpoint on above
+//    @GetMapping("/by-user/{userId}")
+//    public ResponseEntity<CourierDto.ApiResponse<CourierDto.CourierProfileResponse>> getByUserId(
+//            @PathVariable UUID userId) {
+//        return ResponseEntity.ok(CourierDto.ApiResponse.ok(courierService.getByUserId(userId)));
+//    }
 
     @PutMapping("/{id}")
     public ResponseEntity<CourierDto.ApiResponse<CourierDto.CourierProfileResponse>> update(
