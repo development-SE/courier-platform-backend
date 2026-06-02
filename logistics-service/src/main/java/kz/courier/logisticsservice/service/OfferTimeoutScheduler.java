@@ -60,14 +60,25 @@ public class OfferTimeoutScheduler {
         }
 
         int processed = 0;
+        int skipped = 0;
+        int failed = 0;
         for (UUID assignmentId : timedOutOfferIds) {
-            TimeoutResult result = runTimeoutInNewTransaction(assignmentId);
-            if (result != null) {
-                processed++;
-                triggerReassignment(result);
+            try {
+                TimeoutResult result = runTimeoutInNewTransaction(assignmentId);
+                if (result != null) {
+                    processed++;
+                    triggerReassignment(result);
+                } else {
+                    skipped++;
+                }
+            } catch (Exception ex) {
+                failed++;
+                log.error("[OfferTimeoutScheduler] Timeout processing failed assignmentId={} exception={} message={}",
+                        assignmentId, ex.getClass().getSimpleName(), ex.getMessage(), ex);
             }
         }
-        log.info("[OfferTimeoutScheduler] Timed out {} pending offers", processed);
+        log.info("[OfferTimeoutScheduler] Timeout batch summary scanned={} processed={} skipped={} failed={}",
+                timedOutOfferIds.size(), processed, skipped, failed);
     }
 
     private TimeoutResult runTimeoutInNewTransaction(UUID assignmentId) {

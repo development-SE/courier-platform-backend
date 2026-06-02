@@ -7,13 +7,17 @@ import kz.courier.apigateway.dto.request.LogoutAllRequest;
 import kz.courier.apigateway.dto.request.RefreshTokenRequest;
 import kz.courier.apigateway.dto.request.RegisterRequest;
 import kz.courier.apigateway.dto.response.*;
+import kz.courier.apigateway.error.GatewayErrorWriter;
 import kz.courier.apigateway.grpc.AuthClient;
+import kz.courier.apigateway.observability.CorrelationIdFilter;
 import kz.courier.apigateway.security.JwtUtil;
+import kz.courier.common.error.StandardErrorResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ServerWebExchange;
 
 import java.util.List;
 
@@ -25,21 +29,22 @@ public class AuthController {
 
     private final AuthClient authGrpcClient;
     private final JwtUtil jwtUtil;
+    private final GatewayErrorWriter errorWriter;
 
     /**
      * POST /api/v1/auth/register
      * Register a new user
      */
     @PostMapping("/register")
-    public ResponseEntity<ApiResponse<RegisterResponse>> register(
-            @Valid @RequestBody RegisterRequest request) {
+    public ResponseEntity<?> register(
+            @Valid @RequestBody RegisterRequest request,
+            ServerWebExchange exchange) {
 
         log.info("REST: Register request for email: {}", request.getEmail());
 
         ApiResponse<RegisterResponse> response = authGrpcClient.register(request);
 
-        HttpStatus status = response.isSuccess() ? HttpStatus.CREATED : HttpStatus.BAD_REQUEST;
-        return ResponseEntity.status(status).body(response);
+        return apiResponse(exchange, response, HttpStatus.CREATED, HttpStatus.BAD_REQUEST);
     }
 
     /**
@@ -47,21 +52,20 @@ public class AuthController {
      * Super-admin-only platform staff creation for ADMIN accounts.
      */
     @PostMapping("/staff")
-    public ResponseEntity<ApiResponse<RegisterResponse>> createStaffUser(
+    public ResponseEntity<?> createStaffUser(
             @RequestHeader(value = "Authorization", required = false) String authorization,
-            @Valid @RequestBody CreateStaffUserRequest request) {
+            @Valid @RequestBody CreateStaffUserRequest request,
+            ServerWebExchange exchange) {
 
         AuthActor actor = requireSuperAdminActor(authorization);
         if (actor == null) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body(ApiResponse.error("FORBIDDEN", "Only SUPER_ADMIN can create admin users"));
+            return error(exchange, HttpStatus.FORBIDDEN, "FORBIDDEN", "Only SUPER_ADMIN can create admin users");
         }
 
         ApiResponse<RegisterResponse> response =
                 authGrpcClient.createStaffUser(request, actor.userId(), actor.role());
 
-        HttpStatus status = response.isSuccess() ? HttpStatus.CREATED : HttpStatus.BAD_REQUEST;
-        return ResponseEntity.status(status).body(response);
+        return apiResponse(exchange, response, HttpStatus.CREATED, HttpStatus.BAD_REQUEST);
     }
 
     /**
@@ -69,15 +73,15 @@ public class AuthController {
      * User login
      */
     @PostMapping("/login")
-    public ResponseEntity<ApiResponse<LoginResponse>> login(
-            @Valid @RequestBody LoginRequest request) {
+    public ResponseEntity<?> login(
+            @Valid @RequestBody LoginRequest request,
+            ServerWebExchange exchange) {
 
         log.info("REST: Login request for email: {}", request.getEmail());
 
         ApiResponse<LoginResponse> response = authGrpcClient.login(request);
 
-        HttpStatus status = response.isSuccess() ? HttpStatus.OK : HttpStatus.UNAUTHORIZED;
-        return ResponseEntity.status(status).body(response);
+        return apiResponse(exchange, response, HttpStatus.OK, HttpStatus.UNAUTHORIZED);
     }
 
     /**
@@ -85,45 +89,44 @@ public class AuthController {
      * Refresh access token
      */
     @PostMapping("/refresh")
-    public ResponseEntity<ApiResponse<RefreshTokenResponse>> refreshToken(
-            @Valid @RequestBody RefreshTokenRequest request) {
+    public ResponseEntity<?> refreshToken(
+            @Valid @RequestBody RefreshTokenRequest request,
+            ServerWebExchange exchange) {
 
         log.info("REST: Refresh token request");
 
         ApiResponse<RefreshTokenResponse> response = authGrpcClient.refreshToken(request);
 
-        HttpStatus status = response.isSuccess() ? HttpStatus.OK : HttpStatus.UNAUTHORIZED;
-        return ResponseEntity.status(status).body(response);
+        return apiResponse(exchange, response, HttpStatus.OK, HttpStatus.UNAUTHORIZED);
     }
 
     @PostMapping("/logout")
-    public ResponseEntity<ApiResponse<String>> logout(
-            @Valid @RequestBody RefreshTokenRequest request) {
+    public ResponseEntity<?> logout(
+            @Valid @RequestBody RefreshTokenRequest request,
+            ServerWebExchange exchange) {
 
         log.info("REST: Logout request");
 
         ApiResponse<String> response = authGrpcClient.logout(request);
 
-        HttpStatus status = response.isSuccess() ? HttpStatus.OK : HttpStatus.UNAUTHORIZED;
-        return ResponseEntity.status(status).body(response);
+        return apiResponse(exchange, response, HttpStatus.OK, HttpStatus.UNAUTHORIZED);
     }
 
     @PostMapping("/logout-all")
-    public ResponseEntity<ApiResponse<String>> logoutAll(
+    public ResponseEntity<?> logoutAll(
             @RequestHeader(value = "Authorization", required = false) String authorization,
-            @RequestBody(required = false) LogoutAllRequest request) {
+            @RequestBody(required = false) LogoutAllRequest request,
+            ServerWebExchange exchange) {
 
         AuthActor actor = requireAuthenticatedActor(authorization);
         if (actor == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(ApiResponse.error("UNAUTHORIZED", "Valid Authorization header required"));
+            return error(exchange, HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "Valid Authorization header required");
         }
 
         String targetUserId = request != null ? request.getTargetUserId() : null;
         ApiResponse<String> response = authGrpcClient.logoutAll(actor.userId(), actor.role(), targetUserId);
 
-        HttpStatus status = response.isSuccess() ? HttpStatus.OK : mapAuthStatus(response);
-        return ResponseEntity.status(status).body(response);
+        return apiResponse(exchange, response, HttpStatus.OK, mapAuthStatus(response));
     }
 
     /**
@@ -131,15 +134,15 @@ public class AuthController {
      * Verify email with confirmation token
      */
     @GetMapping("/verify")
-    public ResponseEntity<ApiResponse<String>> verifyEmail(
-            @RequestParam String token) {
+    public ResponseEntity<?> verifyEmail(
+            @RequestParam String token,
+            ServerWebExchange exchange) {
 
         log.info("REST: Verify email request");
 
         ApiResponse<String> response = authGrpcClient.verifyEmail(token);
 
-        HttpStatus status = response.isSuccess() ? HttpStatus.OK : HttpStatus.BAD_REQUEST;
-        return ResponseEntity.status(status).body(response);
+        return apiResponse(exchange, response, HttpStatus.OK, HttpStatus.BAD_REQUEST);
     }
 
     /**
@@ -147,34 +150,32 @@ public class AuthController {
      * List auth users for admin views.
      */
     @GetMapping("/users")
-    public ResponseEntity<ApiResponse<List<UserResponse>>> listUsers(
+    public ResponseEntity<?> listUsers(
             @RequestHeader(value = "Authorization", required = false) String authorization,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "10") int size,
-            @RequestParam(defaultValue = "ADMIN") String role) {
+            @RequestParam(defaultValue = "ADMIN") String role,
+            ServerWebExchange exchange) {
 
         AuthActor actor = requirePrivilegedActor(authorization);
         if (actor == null) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body(ApiResponse.error("FORBIDDEN", "Only privileged users can view users"));
+            return error(exchange, HttpStatus.FORBIDDEN, "FORBIDDEN", "Only privileged users can view users");
         }
 
         String filterRole = role == null || role.isBlank() ? "ADMIN" : role.trim().toUpperCase();
         if (!List.of("ADMIN", "COURIER").contains(filterRole)) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(ApiResponse.error("INVALID_ROLE", "Only ADMIN or COURIER users can be listed here"));
+            return error(exchange, HttpStatus.BAD_REQUEST, "INVALID_ROLE",
+                    "Only ADMIN or COURIER users can be listed here");
         }
         if ("ADMIN".equals(filterRole) && !"SUPER_ADMIN".equals(actor.role())) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body(ApiResponse.error("FORBIDDEN", "Only SUPER_ADMIN can view admin users"));
+            return error(exchange, HttpStatus.FORBIDDEN, "FORBIDDEN", "Only SUPER_ADMIN can view admin users");
         }
 
         log.info("REST: List auth users request - page: {}, size: {}, role: {}", page, size, filterRole);
 
         ApiResponse<List<UserResponse>> response = authGrpcClient.listUsers(page, size, filterRole);
 
-        HttpStatus status = response.isSuccess() ? HttpStatus.OK : HttpStatus.FORBIDDEN;
-        return ResponseEntity.status(status).body(response);
+        return apiResponse(exchange, response, HttpStatus.OK, HttpStatus.FORBIDDEN);
     }
 
     /**
@@ -182,22 +183,21 @@ public class AuthController {
      * Delete an admin user (SuperAdmin only)
      */
     @DeleteMapping("/users/{id}")
-    public ResponseEntity<ApiResponse<String>> deleteUser(
+    public ResponseEntity<?> deleteUser(
             @RequestHeader(value = "Authorization", required = false) String authorization,
-            @PathVariable String id) {
+            @PathVariable String id,
+            ServerWebExchange exchange) {
 
         AuthActor actor = requireSuperAdminActor(authorization);
         if (actor == null) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body(ApiResponse.error("FORBIDDEN", "Only SUPER_ADMIN can delete admin users"));
+            return error(exchange, HttpStatus.FORBIDDEN, "FORBIDDEN", "Only SUPER_ADMIN can delete admin users");
         }
 
         log.info("REST: Delete auth user request for userId: {}", id);
 
         ApiResponse<String> response = authGrpcClient.deleteUser(id);
 
-        HttpStatus status = response.isSuccess() ? HttpStatus.OK : HttpStatus.BAD_REQUEST;
-        return ResponseEntity.status(status).body(response);
+        return apiResponse(exchange, response, HttpStatus.OK, HttpStatus.BAD_REQUEST);
     }
 
     private AuthActor requireSuperAdminActor(String authorization) {
@@ -238,6 +238,35 @@ public class AuthController {
             case "UNAUTHORIZED", "INVALID_REFRESH" -> HttpStatus.UNAUTHORIZED;
             default -> HttpStatus.BAD_REQUEST;
         };
+    }
+
+    private ResponseEntity<?> apiResponse(
+            ServerWebExchange exchange,
+            ApiResponse<?> response,
+            HttpStatus successStatus,
+            HttpStatus failureStatus) {
+        if (response.isSuccess()) {
+            return ResponseEntity.status(successStatus).body(response);
+        }
+
+        String code = response.getError() != null && response.getError().getCode() != null
+                ? response.getError().getCode()
+                : "REQUEST_FAILED";
+        String message = response.getError() != null && response.getError().getMessage() != null
+                ? response.getError().getMessage()
+                : "Request failed";
+        return error(exchange, failureStatus, code, message);
+    }
+
+    private ResponseEntity<StandardErrorResponse> error(
+            ServerWebExchange exchange,
+            HttpStatus status,
+            String code,
+            String message) {
+        StandardErrorResponse body = errorWriter.body(exchange, status, code, message);
+        return ResponseEntity.status(status)
+                .header(CorrelationIdFilter.HEADER, body.traceId())
+                .body(body);
     }
 
     private record AuthActor(String userId, String role) {

@@ -5,10 +5,9 @@ import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.MalformedJwtException;
 import io.jsonwebtoken.UnsupportedJwtException;
 import io.jsonwebtoken.security.SecurityException;
-import kz.courier.apigateway.dto.response.ApiResponse;
+import kz.courier.apigateway.error.GatewayErrorWriter;
 import kz.courier.apigateway.security.JwtUtil;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.MediaType;
 import org.springframework.cloud.gateway.filter.GatewayFilter;
 import org.springframework.cloud.gateway.filter.factory.AbstractGatewayFilterFactory;
 import org.springframework.http.HttpHeaders;
@@ -18,22 +17,17 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
-
-import java.nio.charset.StandardCharsets;
-
 @Slf4j
 @Component
 public class JwtAuthenticationFilter extends AbstractGatewayFilterFactory<JwtAuthenticationFilter.Config> {
 
     private final JwtUtil jwtUtil;
-    private final ObjectMapper objectMapper;
+    private final GatewayErrorWriter errorWriter;
 
-    public JwtAuthenticationFilter(JwtUtil jwtUtil, ObjectMapper objectMapper) {
+    public JwtAuthenticationFilter(JwtUtil jwtUtil, GatewayErrorWriter errorWriter) {
         super(Config.class);
         this.jwtUtil = jwtUtil;
-        this.objectMapper = objectMapper;
+        this.errorWriter = errorWriter;
     }
 
     @Override
@@ -76,46 +70,29 @@ public class JwtAuthenticationFilter extends AbstractGatewayFilterFactory<JwtAut
                 return chain.filter(exchange.mutate().request(modifiedRequest).build());
 
             } catch (ExpiredJwtException e) {
-                log.warn("JWT expired for request {}: {}", request.getURI(), e.getMessage());
+                log.warn("JWT expired for request {}", request.getURI());
                 return onError(exchange, "JWT_EXPIRED", "Access token has expired", HttpStatus.UNAUTHORIZED);
             } catch (SecurityException e) {
-                log.warn("JWT signature validation failed for request {}: {}", request.getURI(), e.getMessage());
+                log.warn("JWT signature validation failed for request {}", request.getURI());
                 return onError(exchange, "JWT_SIGNATURE_INVALID", "JWT signature is invalid", HttpStatus.UNAUTHORIZED);
             } catch (MalformedJwtException e) {
-                log.warn("Malformed JWT for request {}: {}", request.getURI(), e.getMessage());
+                log.warn("Malformed JWT for request {}", request.getURI());
                 return onError(exchange, "JWT_MALFORMED", "JWT token is malformed", HttpStatus.UNAUTHORIZED);
             } catch (UnsupportedJwtException e) {
-                log.warn("Unsupported JWT for request {}: {}", request.getURI(), e.getMessage());
+                log.warn("Unsupported JWT for request {}", request.getURI());
                 return onError(exchange, "JWT_UNSUPPORTED", "JWT token type is unsupported", HttpStatus.UNAUTHORIZED);
             } catch (IllegalArgumentException e) {
-                log.warn("Empty JWT for request {}: {}", request.getURI(), e.getMessage());
+                log.warn("Empty JWT for request {}", request.getURI());
                 return onError(exchange, "JWT_MISSING", "JWT token is missing or empty", HttpStatus.UNAUTHORIZED);
             } catch (Exception e) {
-                log.error("JWT validation error: {}", e.getMessage());
+                log.warn("JWT validation failed for request {}", request.getURI());
                 return onError(exchange, "JWT_INVALID", "JWT validation failed", HttpStatus.UNAUTHORIZED);
             }
         };
     }
 
     private Mono<Void> onError(ServerWebExchange exchange, String code, String message, HttpStatus status) {
-        exchange.getResponse().setStatusCode(status);
-        exchange.getResponse().getHeaders().setContentType(MediaType.APPLICATION_JSON);
-
-        String errorResponse = toJson(code, message);
-
-        return exchange.getResponse()
-                .writeWith(Mono.just(exchange.getResponse()
-                        .bufferFactory()
-                        .wrap(errorResponse.getBytes(StandardCharsets.UTF_8))));
-    }
-
-    private String toJson(String code, String message) {
-        try {
-            return objectMapper.writeValueAsString(ApiResponse.error(code, message));
-        } catch (JsonProcessingException e) {
-            log.error("Failed to serialize JWT error response", e);
-            return "{\"success\":false,\"error\":{\"code\":\"" + code + "\",\"message\":\"" + message + "\"}}";
-        }
+        return errorWriter.write(exchange, status, code, message);
     }
 
     public static class Config {

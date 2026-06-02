@@ -97,7 +97,6 @@ class CourierServiceAuthorizationTest {
         UUID callerId = UUID.randomUUID();
         UUID requestedUserId = UUID.randomUUID();
         setPrincipal(callerId, "COURIER");
-        when(authGrpcClient.getUser(requestedUserId)).thenReturn(authUser(requestedUserId, "COURIER", true, null));
 
         assertThatThrownBy(() -> courierService.create(selfRequest(requestedUserId, TransportType.CAR)))
                 .isInstanceOf(BusinessException.class)
@@ -203,7 +202,6 @@ class CourierServiceAuthorizationTest {
         UUID managerCompanyId = UUID.randomUUID();
         UUID otherCompanyId = UUID.randomUUID();
         setPrincipal(managerId, "MANAGER");
-        when(authGrpcClient.getUser(courierUserId)).thenReturn(authUser(courierUserId, "COURIER", true, null));
         when(authGrpcClient.getUser(managerId)).thenReturn(authUser(managerId, "MANAGER", true, managerCompanyId));
 
         assertThatThrownBy(() -> courierService.create(new CourierDto.CreateCourierRequest(
