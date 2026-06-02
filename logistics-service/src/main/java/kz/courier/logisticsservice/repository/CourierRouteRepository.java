@@ -20,6 +20,13 @@ public interface CourierRouteRepository extends JpaRepository<CourierRoute, UUID
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
         SELECT r FROM CourierRoute r
+        WHERE r.id = :routeId
+        """)
+    Optional<CourierRoute> lockById(@Param("routeId") UUID routeId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+        SELECT r FROM CourierRoute r
         WHERE r.courierId = :courierId
           AND r.status = kz.courier.logisticsservice.entity.RouteStatus.ACTIVE
         """)

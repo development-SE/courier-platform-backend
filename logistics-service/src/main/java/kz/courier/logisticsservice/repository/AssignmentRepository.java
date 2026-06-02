@@ -78,6 +78,13 @@ public interface AssignmentRepository extends JpaRepository<CourierAssignment, U
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
         SELECT a FROM CourierAssignment a
+        WHERE a.id = :id
+        """)
+    Optional<CourierAssignment> lockById(@Param("id") UUID id);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+        SELECT a FROM CourierAssignment a
         WHERE a.orderId = :orderId
           AND a.assignmentStatus NOT IN
               (kz.courier.logisticsservice.entity.AssignmentStatus.DELIVERED,
@@ -88,6 +95,14 @@ public interface AssignmentRepository extends JpaRepository<CourierAssignment, U
                kz.courier.logisticsservice.entity.AssignmentStatus.MANUAL_REQUIRED)
         """)
     List<CourierAssignment> lockActiveAssignmentsByOrderId(@Param("orderId") UUID orderId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+        SELECT a FROM CourierAssignment a
+        WHERE a.orderId = :orderId
+          AND a.routeCleanedAt IS NULL
+        """)
+    List<CourierAssignment> lockUncleanedAssignmentsByOrderId(@Param("orderId") UUID orderId);
 
     @Query("""
         SELECT a.courierId

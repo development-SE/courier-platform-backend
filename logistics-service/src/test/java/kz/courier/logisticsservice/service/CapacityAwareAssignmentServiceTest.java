@@ -40,6 +40,7 @@ class CapacityAwareAssignmentServiceTest {
     @Mock OrderGrpcClient orderGrpcClient;
     @Mock GatewayPrincipalProvider gatewayPrincipalProvider;
     @Mock CourierProfileClient courierProfileClient;
+    @Mock RouteCleanupService routeCleanupService;
 
     CapacityAwareAssignmentService service;
 
@@ -58,7 +59,8 @@ class CapacityAwareAssignmentServiceTest {
                 eventPublisher,
                 orderGrpcClient,
                 gatewayPrincipalProvider,
-                courierProfileClient);
+                courierProfileClient,
+                routeCleanupService);
         actorId = UUID.randomUUID();
         orderId = UUID.randomUUID();
         when(gatewayPrincipalProvider.requireCurrentUserId()).thenReturn(actorId);
@@ -67,6 +69,8 @@ class CapacityAwareAssignmentServiceTest {
         lenient().when(orderGrpcClient.getOrder(orderId)).thenReturn(order(ParcelSize.SMALL));
         lenient().when(assignmentRepository.lockUnresolvedManualRequiredByOrderId(orderId))
                 .thenReturn(Optional.empty());
+        lenient().when(assignmentRepository.lockUncleanedAssignmentsByOrderId(orderId))
+                .thenReturn(List.of());
         lenient().when(assignmentRepository.saveAndFlush(any())).thenAnswer(invocation -> {
             CourierAssignment assignment = invocation.getArgument(0);
             assignment.setId(UUID.randomUUID());
@@ -206,6 +210,35 @@ class CapacityAwareAssignmentServiceTest {
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.manualAssign(
                         new LogisticsDto.ManualAssignmentRequest(orderId, courierId, "dispatcher choice")))
                 .hasMessageContaining("not eligible");
+    }
+
+    @Test
+    void manualAssignmentCleansTerminalRouteImpactBeforeCreatingReplacement() {
+        UUID courierId = UUID.randomUUID();
+        CourierAssignment oldRejected = CourierAssignment.builder()
+                .id(UUID.randomUUID())
+                .orderId(orderId)
+                .courierId(UUID.randomUUID())
+                .routeId(UUID.randomUUID())
+                .demandUnits(1)
+                .assignmentStatus(AssignmentStatus.REJECTED)
+                .assignedAt(OffsetDateTime.now())
+                .build();
+        when(assignmentRepository.lockUncleanedAssignmentsByOrderId(orderId)).thenReturn(List.of(oldRejected));
+        when(locationRepository.findById(courierId)).thenReturn(Optional.of(CourierLocation.builder()
+                .courierId(courierId)
+                .latitude(43.01)
+                .longitude(76.91)
+                .isOnline(true)
+                .updatedAt(OffsetDateTime.now())
+                .build()));
+        givenProfile(courierId, "EMPLOYEE", "BIKE", 2);
+        givenNoActiveRoute(courierId);
+        givenCommit(courierId);
+
+        service.manualAssign(new LogisticsDto.ManualAssignmentRequest(orderId, courierId, "dispatcher choice"));
+
+        verify(routeCleanupService).cleanupAssignment(oldRejected, "dispatcher choice", false);
     }
 
     private OrderGrpcClient.OrderSnapshot order(ParcelSize parcelSize) {

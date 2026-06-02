@@ -3,15 +3,12 @@ package kz.courier.logisticsservice.service;
 import kz.courier.logisticsservice.entity.AssignmentHistory;
 import kz.courier.logisticsservice.entity.AssignmentStatus;
 import kz.courier.logisticsservice.entity.CourierAssignment;
-import kz.courier.logisticsservice.entity.RouteStatus;
-import kz.courier.logisticsservice.entity.RouteStopStatus;
 import kz.courier.logisticsservice.grpc.OrderGrpcClient;
 import kz.courier.logisticsservice.kafka.AssignmentEventPublisher;
 import kz.courier.logisticsservice.repository.AssignmentHistoryRepository;
 import kz.courier.logisticsservice.repository.AssignmentRepository;
-import kz.courier.logisticsservice.repository.CourierRouteRepository;
-import kz.courier.logisticsservice.repository.RouteStopRepository;
 import kz.courier.logisticsservice.security.SystemPrincipalRunner;
+import kz.courier.order.v1.OrderStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -34,11 +31,10 @@ public class OfferTimeoutScheduler {
 
     private final AssignmentRepository assignmentRepository;
     private final AssignmentHistoryRepository historyRepository;
-    private final CourierRouteRepository routeRepository;
-    private final RouteStopRepository routeStopRepository;
     private final AssignmentEventPublisher eventPublisher;
     private final OrderGrpcClient orderGrpcClient;
     private final CapacityAwareAssignmentService assignmentService;
+    private final RouteCleanupService routeCleanupService;
     private final SystemPrincipalRunner systemPrincipalRunner;
     private final PlatformTransactionManager transactionManager;
 
@@ -98,7 +94,7 @@ public class OfferTimeoutScheduler {
         assignment.setCancelledAt(OffsetDateTime.now());
         assignment.setCancellationReason("offer-timeout");
         assignmentRepository.save(assignment);
-        releaseRouteImpact(assignment);
+        routeCleanupService.cleanupAssignment(assignment, "offer-timeout", false);
 
         historyRepository.save(AssignmentHistory.builder()
                 .assignmentId(assignment.getId())
@@ -121,6 +117,20 @@ public class OfferTimeoutScheduler {
 
     private void triggerReassignment(TimeoutResult result) {
         try {
+            OrderGrpcClient.OrderSnapshot order =
+                    systemPrincipalRunner.run(() -> orderGrpcClient.getOrder(result.orderId()));
+            if (order.status() == OrderStatus.CANCELLED || order.status() == OrderStatus.DELIVERED) {
+                log.info("[OfferTimeoutScheduler] Reassignment skipped for terminal order orderId={} status={}",
+                        result.orderId(), order.status());
+                return;
+            }
+        } catch (Exception ex) {
+            log.warn("[OfferTimeoutScheduler] Failed to check reassignment eligibility orderId={} reason={}",
+                    result.orderId(), ex.getMessage());
+            return;
+        }
+
+        try {
             systemPrincipalRunner.run(() -> {
                 orderGrpcClient.markAssignmentPending(result.orderId());
                 return null;
@@ -139,43 +149,6 @@ public class OfferTimeoutScheduler {
             log.warn("[OfferTimeoutScheduler] Reassignment failed orderId={} reason={}",
                     result.orderId(), ex.getMessage());
         }
-    }
-
-    private void releaseRouteImpact(CourierAssignment assignment) {
-        if (assignment.getRouteId() == null || assignment.getDemandUnits() == null || assignment.getCourierId() == null) {
-            return;
-        }
-
-        routeRepository.lockActiveRouteByCourierId(assignment.getCourierId())
-                .filter(route -> route.getId().equals(assignment.getRouteId()))
-                .ifPresent(route -> {
-                    route.setCurrentLoadUnits(Math.max(0,
-                            route.getCurrentLoadUnits() - assignment.getDemandUnits()));
-                    route.setActiveOrdersCount(Math.max(0, route.getActiveOrdersCount() - 1));
-                    routeRepository.save(route);
-                });
-
-        var stops = routeStopRepository.findAllByRouteIdOrderBySequenceNumberAsc(assignment.getRouteId());
-        var changedStops = stops.stream()
-                .filter(stop -> assignment.getOrderId().equals(stop.getOrderId()))
-                .filter(stop -> stop.getStatus() != RouteStopStatus.COMPLETED
-                        && stop.getStatus() != RouteStopStatus.CANCELLED)
-                .peek(stop -> stop.setStatus(RouteStopStatus.CANCELLED))
-                .toList();
-        if (!changedStops.isEmpty()) {
-            routeStopRepository.saveAll(changedStops);
-        }
-
-        routeRepository.findById(assignment.getRouteId()).ifPresent(route -> {
-            var routeStops = routeStopRepository.findAllByRouteIdOrderBySequenceNumberAsc(route.getId());
-            boolean hasActiveStops = routeStops.stream()
-                    .anyMatch(stop -> stop.getStatus() != RouteStopStatus.CANCELLED
-                            && stop.getStatus() != RouteStopStatus.COMPLETED);
-            if (!hasActiveStops && route.getStatus() == RouteStatus.ACTIVE) {
-                route.setStatus(RouteStatus.COMPLETED);
-                routeRepository.save(route);
-            }
-        });
     }
 
     private record TimeoutResult(UUID assignmentId, UUID orderId) {

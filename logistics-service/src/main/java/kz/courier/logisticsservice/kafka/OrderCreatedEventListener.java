@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import kz.courier.logisticsservice.exception.BusinessException;
 import kz.courier.logisticsservice.security.SystemPrincipalRunner;
 import kz.courier.logisticsservice.service.CapacityAwareAssignmentService;
+import kz.courier.logisticsservice.service.RouteCleanupService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.annotation.KafkaListener;
@@ -23,6 +24,7 @@ public class OrderCreatedEventListener {
     private final ObjectMapper objectMapper;
     private final CapacityAwareAssignmentService assignmentService;
     private final SystemPrincipalRunner systemPrincipalRunner;
+    private final RouteCleanupService routeCleanupService;
 
     @KafkaListener(
             topics = "${kafka.topic.order-events:kafka-order-events}",
@@ -32,6 +34,12 @@ public class OrderCreatedEventListener {
             OrderCreatedEvent event = objectMapper.readValue(payload, OrderCreatedEvent.class);
             if (!Set.of("ORDER_CREATED", "ORDER_READY", "ORDER_STATUS_CHANGED").contains(event.eventType())) {
                 log.debug("[OrderCreatedEventListener] Ignoring eventType={}", event.eventType());
+                return;
+            }
+            if ("CANCELLED".equals(event.status())) {
+                routeCleanupService.cleanupOrderCancellation(event.orderId(), "order-cancelled-event");
+                log.info("[OrderCreatedEventListener] Cleaned logistics state for cancelled orderId={}",
+                        event.orderId());
                 return;
             }
             if (event.status() == null || !ASSIGNMENT_ELIGIBLE_ORDER_STATUSES.contains(event.status())) {

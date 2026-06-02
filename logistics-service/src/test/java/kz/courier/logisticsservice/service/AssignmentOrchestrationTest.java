@@ -29,12 +29,13 @@ class AssignmentOrchestrationTest {
     @Mock CapacityAwareAssignmentService assignmentService;
     @Mock SystemPrincipalRunner systemPrincipalRunner;
     @Mock AssignmentRepository assignmentRepository;
+    @Mock RouteCleanupService routeCleanupService;
 
     @Test
     void orderCreatedListenerCallsAutoAssignment() {
         UUID orderId = UUID.randomUUID();
         OrderCreatedEventListener listener = new OrderCreatedEventListener(
-                new ObjectMapper(), assignmentService, systemPrincipalRunner);
+                new ObjectMapper(), assignmentService, systemPrincipalRunner, routeCleanupService);
         when(assignmentService.hasActiveAssignment(orderId)).thenReturn(false);
         when(systemPrincipalRunner.run(any())).thenAnswer(invocation -> {
             Supplier<?> supplier = invocation.getArgument(0);
@@ -52,7 +53,7 @@ class AssignmentOrchestrationTest {
     void orderCreatedListenerIgnoresAlreadyAssignedOrders() {
         UUID orderId = UUID.randomUUID();
         OrderCreatedEventListener listener = new OrderCreatedEventListener(
-                new ObjectMapper(), assignmentService, systemPrincipalRunner);
+                new ObjectMapper(), assignmentService, systemPrincipalRunner, routeCleanupService);
         when(assignmentService.hasActiveAssignment(orderId)).thenReturn(true);
 
         listener.onOrderCreated("""
@@ -60,6 +61,21 @@ class AssignmentOrchestrationTest {
                 """.formatted(orderId));
 
         verify(assignmentService, never()).autoAssign(any());
+    }
+
+    @Test
+    void orderCreatedListenerCleansCancelledOrderWithoutAutoAssignment() {
+        UUID orderId = UUID.randomUUID();
+        OrderCreatedEventListener listener = new OrderCreatedEventListener(
+                new ObjectMapper(), assignmentService, systemPrincipalRunner, routeCleanupService);
+
+        listener.onOrderCreated("""
+                {"eventType":"ORDER_STATUS_CHANGED","orderId":"%s","status":"CANCELLED","serviceType":"STANDARD"}
+                """.formatted(orderId));
+
+        verify(routeCleanupService).cleanupOrderCancellation(orderId, "order-cancelled-event");
+        verify(assignmentService, never()).autoAssign(any());
+        verify(systemPrincipalRunner, never()).run(any());
     }
 
 //    @Test

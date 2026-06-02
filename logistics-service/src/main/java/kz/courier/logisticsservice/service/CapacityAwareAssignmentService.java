@@ -50,6 +50,7 @@ public class CapacityAwareAssignmentService {
     private final OrderGrpcClient orderGrpcClient;
     private final GatewayPrincipalProvider gatewayPrincipalProvider;
     private final CourierProfileClient courierProfileClient;
+    private final RouteCleanupService routeCleanupService;
 
     @Value("${assignment.retry.delay-seconds:60}")
     private long retryDelaySeconds;
@@ -165,6 +166,7 @@ public class CapacityAwareAssignmentService {
         UUID orderId = request.orderId();
         UUID courierId = request.courierId();
         assignmentRepository.lockOrderAssignmentMutex(orderId.toString());
+        cleanupTerminalAssignmentsBeforeManualAssignment(orderId, request.reason());
 
         if (!assignmentRepository.lockActiveAssignmentsByOrderId(orderId).isEmpty()) {
             throw new BusinessException("DUPLICATE_ASSIGNMENT",
@@ -496,6 +498,15 @@ public class CapacityAwareAssignmentService {
                     failed.setResolvedAssignmentId(resolvedAssignmentId);
                     assignmentRepository.save(failed);
                 });
+    }
+
+    private void cleanupTerminalAssignmentsBeforeManualAssignment(UUID orderId, String reason) {
+        assignmentRepository.lockUncleanedAssignmentsByOrderId(orderId).stream()
+                .filter(assignment -> !assignment.getAssignmentStatus().isActive())
+                .forEach(assignment -> routeCleanupService.cleanupAssignment(
+                        assignment,
+                        reason == null || reason.isBlank() ? "manual-reassignment" : reason,
+                        false));
     }
 
     private LogisticsDto.AutoAssignResponse failureResponse(UUID orderId,

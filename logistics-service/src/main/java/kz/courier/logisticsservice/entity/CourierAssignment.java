@@ -103,6 +103,15 @@ public class CourierAssignment {
     @Column(name = "cancellation_reason")
     private String cancellationReason;
 
+    @Column(name = "route_cleaned_at")
+    private OffsetDateTime routeCleanedAt;
+
+    @Column(name = "route_cleanup_reason", length = 100)
+    private String routeCleanupReason;
+
+    @Column(name = "route_cleanup_by")
+    private UUID routeCleanupBy;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
