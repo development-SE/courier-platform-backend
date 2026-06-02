@@ -59,7 +59,7 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
     private static final Set<String> PRIVILEGED_ROLES =
             Set.of("ADMIN", "SUPER_ADMIN");
     private static final Set<String> COMPANY_SCOPED_ROLES =
-            Set.of("PARTNER", "DIRECTOR", "COMPANY_ADMIN", "MANAGER");
+            Set.of("PARTNER", "DIRECTOR", "MANAGER");
     private static final int DEFAULT_PAGE_SIZE = 20;
     private static final int MAX_PAGE_SIZE = 100;
 
@@ -828,7 +828,8 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
                     || next == kz.courier.orderservice.model.OrderStatus.REJECTED
                     || next == kz.courier.orderservice.model.OrderStatus.CANCELLED;
             case ACCEPTED -> next == kz.courier.orderservice.model.OrderStatus.PREPARING
-                    || next == kz.courier.orderservice.model.OrderStatus.CANCELLED;
+                    || next == kz.courier.orderservice.model.OrderStatus.CANCELLED
+                    || next == kz.courier.orderservice.model.OrderStatus.READY;
             case PREPARING -> next == kz.courier.orderservice.model.OrderStatus.READY
                     || next == kz.courier.orderservice.model.OrderStatus.CANCELLED;
             default -> false;

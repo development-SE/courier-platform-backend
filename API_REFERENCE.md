@@ -90,7 +90,6 @@ Register success:
   "success": true,
   "data": {
     "userId": "00000000-0000-0000-0000-000000000101",
-    "confirmationToken": "verify-token",
     "message": "Registration successful. Please check your email to verify your account."
   }
 }
@@ -756,7 +755,7 @@ POST /api/v1/auth/register
 2. Verify email:
 
 ```http
-GET /api/v1/auth/verify?token={{confirmationToken}}
+GET /api/v1/auth/verify?token={{token_from_email_link}}
 ```
 
 3. Login:
@@ -1015,7 +1014,7 @@ Frontend notes:
 
 - Public registration only supports `CLIENT` and `COURIER`.
 - There is no public endpoint to bootstrap the first `SUPER_ADMIN`; seed it in DB or migration/admin tooling.
-- Company employee creation returns a confirmation token for the auth user; verify before login.
+- Company employee creation sends the auth verification link by email; verify before login.
 - Courier offer inbox is currently implemented by filtering assignments, not a dedicated endpoint.
 - `changedBy` in assignment status request is accepted by DTO, but service records current authenticated user from JWT.
 - Direct service calls need `X-User-Id` and `X-User-Roles`; gateway calls need only `Authorization`.
@@ -1028,4 +1027,3 @@ Frontend notes:
 - Customer app can poll `GET /api/v1/orders/{{orderId}}` to watch status changes.
 - Operations dashboard can poll manual-required assignments.
 - Push notifications are supported through device tokens, but assignment push behavior depends on Kafka consumers and notification event publishing.
-

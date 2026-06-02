@@ -35,7 +35,7 @@ message RegisterRequest {
 message RegisterResponse {
   kz.courier.common.v1.Response response = 1;
   string user_id = 2;  // UUID of created user
-  string confirmation_token = 3;  // For email verification
+  string confirmation_token = 3 [deprecated = true];  // Not populated; verification link is sent by email
 }
 
 // Super-admin-only staff creation request.

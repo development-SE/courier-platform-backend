@@ -88,10 +88,6 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
             validatePassword(req.getPassword());
             validateNames(req.getFirstName(), req.getLastName());
 
-            System.out.println("USER IS creating------");
-            System.out.println(req.getPassword());
-
-
             // ---- create user ------------------------------------------------
             UUID companyId = req.hasCompanyId() && !req.getCompanyId().isBlank()
                     ? UUID.fromString(req.getCompanyId())
@@ -110,8 +106,8 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
                     .createdAt(LocalDateTime.now())
                     .updatedAt(LocalDateTime.now())
                     .build();
-            log.debug("Saving new user: {}", req.getEmail());
             user = userRepo.save(user);
+            log.info("Registered auth user userId={} role={}", user.getId(), user.getRole());
 
             // ---- confirmation token -----------------------------------------
             String token = UUID.randomUUID().toString();
@@ -144,7 +140,6 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
             RegisterResponse reply = RegisterResponse.newBuilder()
                     .setResponse(successResponse())
                     .setUserId(user.getId().toString())
-                    .setConfirmationToken(token)
                     .build();
 
             responseObserver.onNext(reply);
@@ -226,7 +221,6 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
             RegisterResponse reply = RegisterResponse.newBuilder()
                     .setResponse(successResponse())
                     .setUserId(user.getId().toString())
-                    .setConfirmationToken(token)
                     .build();
 
             responseObserver.onNext(reply);
@@ -321,7 +315,7 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
             responseObserver.onNext(reply);
             responseObserver.onCompleted();
         } catch (Exception ex) {
-            log.warn("Refresh token failed: {}", ex.getMessage());
+            log.warn("Refresh token validation failed");
             sendRefreshError(responseObserver, "INVALID_REFRESH", "Refresh token invalid or expired");
         }
     }

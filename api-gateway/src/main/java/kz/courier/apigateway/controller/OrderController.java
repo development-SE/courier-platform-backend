@@ -183,7 +183,7 @@ public class OrderController {
                     e.getClaims() != null ? e.getClaims().getExpiration() : "unknown");
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "JWT_EXPIRED");
         } catch (Exception e) {
-            log.warn("[OrderController] Failed to extract JWT claims: {}", e.getMessage());
+            log.warn("[OrderController] Failed to extract JWT claims");
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "JWT_INVALID");
         }
     }

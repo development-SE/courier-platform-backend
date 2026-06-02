@@ -47,8 +47,6 @@ public class AuthClient {
 
             kz.courier.auth.v1.RegisterResponse grpcResponse = authStub.register(grpcRequest);
 
-            log.info("gRPC Register response: {}", grpcResponse);
-
             if (!grpcResponse.getResponse().getSuccess()) {
                 log.warn("Registration failed: {}", grpcResponse.getResponse().getError().getMessage());
                 return ApiResponse.error(
@@ -59,7 +57,6 @@ public class AuthClient {
 
             RegisterResponse response = RegisterResponse.builder()
                     .userId(grpcResponse.getUserId())
-                    .confirmationToken(grpcResponse.getConfirmationToken())
                     .message("Registration successful. Please check your email to verify your account.")
                     .build();
 
@@ -132,7 +129,6 @@ public class AuthClient {
 
             RegisterResponse response = RegisterResponse.builder()
                     .userId(grpcResponse.getUserId())
-                    .confirmationToken(grpcResponse.getConfirmationToken())
                     .message("Admin user created. Please ask them to verify their email.")
                     .build();
 
