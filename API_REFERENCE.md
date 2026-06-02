@@ -64,7 +64,9 @@ The API Gateway is the frontend-facing HTTP entry point. It owns public REST fac
 | `POST` | `/api/v1/auth/register` | Public user registration. Only `CLIENT` and `COURIER` roles are accepted here. | None | Public |
 | `POST` | `/api/v1/auth/staff` | Create platform staff user. Current implementation only allows creating `ADMIN`. | None | `SUPER_ADMIN` |
 | `POST` | `/api/v1/auth/login` | Login and receive access/refresh tokens. | None | Public |
-| `POST` | `/api/v1/auth/refresh` | Refresh access and refresh tokens. | None | Public body token |
+| `POST` | `/api/v1/auth/refresh` | Rotate refresh token and receive new access/refresh tokens. | None | Public body token |
+| `POST` | `/api/v1/auth/logout` | Revoke the presented refresh token. | None | Public body token |
+| `POST` | `/api/v1/auth/logout-all` | Revoke all active refresh tokens for current user, or a target user for admins. | None | Authenticated; `ADMIN`/`SUPER_ADMIN` for other users |
 | `GET` | `/api/v1/auth/verify` | Verify email using confirmation token. | `token` required | Public |
 | `GET` | `/api/v1/auth/users` | List auth users for admin screens. | `page=1`, `size=10`, `role=ADMIN|COURIER` | `ADMIN`, `SUPER_ADMIN`, `DIRECTOR`, `MANAGER`; `ADMIN` list requires `SUPER_ADMIN` |
 | `DELETE` | `/api/v1/auth/users/{id}` | Delete auth user. | None | `SUPER_ADMIN` |
@@ -138,6 +140,31 @@ Refresh request:
 ```json
 {
   "refreshToken": "{{refreshToken}}"
+}
+```
+
+Refresh tokens are single-use rotated tokens. The auth-service stores only
+`SHA-256(pepper + refreshToken)` and revokes a token family if reuse is detected.
+
+Logout request:
+
+```json
+{
+  "refreshToken": "{{refreshToken}}"
+}
+```
+
+Logout all request for current user:
+
+```json
+{}
+```
+
+Admin/SuperAdmin logout all request for another user:
+
+```json
+{
+  "targetUserId": "00000000-0000-0000-0000-000000000101"
 }
 ```
 

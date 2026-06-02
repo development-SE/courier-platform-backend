@@ -49,6 +49,7 @@ The root `.env` contains:
 - JDBC URLs, DB names, usernames, and passwords
 - Kafka and Redis connection values
 - JWT secret
+- Auth refresh-token pepper (`AUTH_REFRESH_TOKEN_PEPPER`)
 - Gateway route targets and gRPC discovery addresses
 - Mail and Firebase settings
 - External verification-link values

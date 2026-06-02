@@ -5,6 +5,7 @@ import io.jsonwebtoken.security.Keys;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import java.security.Key;
+import java.time.Instant;
 import java.util.Date;
 import java.util.UUID;
 
@@ -38,13 +39,21 @@ public class JwtService {
         return builder.compact();
     }
 
-    public String generateRefreshToken(UUID userId) {
-        return Jwts.builder()
+    public RefreshTokenDetails generateRefreshToken(UUID userId) {
+        UUID tokenId = UUID.randomUUID();
+        Instant issuedAt = Instant.now();
+        Instant expiresAt = issuedAt.plusMillis(refreshExpMs);
+
+        String token = Jwts.builder()
+                .setId(tokenId.toString())
                 .setSubject(userId.toString())
-                .setIssuedAt(new Date())
-                .setExpiration(new Date(System.currentTimeMillis() + refreshExpMs))
+                .claim("token_type", "refresh")
+                .setIssuedAt(Date.from(issuedAt))
+                .setExpiration(Date.from(expiresAt))
                 .signWith(secretKey)
                 .compact();
+
+        return new RefreshTokenDetails(token, tokenId, issuedAt, expiresAt);
     }
 
     public Claims validateAndGetClaims(String token) {
@@ -53,5 +62,13 @@ public class JwtService {
                 .build()
                 .parseClaimsJws(token)
                 .getBody();
+    }
+
+    public record RefreshTokenDetails(
+            String token,
+            UUID tokenId,
+            Instant issuedAt,
+            Instant expiresAt
+    ) {
     }
 }

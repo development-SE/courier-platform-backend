@@ -49,6 +49,10 @@ jwt:
   access-expiry-min: 1440 #later will be15
   refresh-expiry-min: 10080   # 7 days
 
+auth:
+  refresh-token:
+    pepper: ${AUTH_REFRESH_TOKEN_PEPPER:refresh-token-pepper-change-me}
+
 #notification:
 #  grpc:
 #    host: notification-service

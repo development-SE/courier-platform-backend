@@ -3,6 +3,7 @@ package kz.courier.apigateway.controller;
 import jakarta.validation.Valid;
 import kz.courier.apigateway.dto.request.CreateStaffUserRequest;
 import kz.courier.apigateway.dto.request.LoginRequest;
+import kz.courier.apigateway.dto.request.LogoutAllRequest;
 import kz.courier.apigateway.dto.request.RefreshTokenRequest;
 import kz.courier.apigateway.dto.request.RegisterRequest;
 import kz.courier.apigateway.dto.response.*;
@@ -95,6 +96,36 @@ public class AuthController {
         return ResponseEntity.status(status).body(response);
     }
 
+    @PostMapping("/logout")
+    public ResponseEntity<ApiResponse<String>> logout(
+            @Valid @RequestBody RefreshTokenRequest request) {
+
+        log.info("REST: Logout request");
+
+        ApiResponse<String> response = authGrpcClient.logout(request);
+
+        HttpStatus status = response.isSuccess() ? HttpStatus.OK : HttpStatus.UNAUTHORIZED;
+        return ResponseEntity.status(status).body(response);
+    }
+
+    @PostMapping("/logout-all")
+    public ResponseEntity<ApiResponse<String>> logoutAll(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @RequestBody(required = false) LogoutAllRequest request) {
+
+        AuthActor actor = requireAuthenticatedActor(authorization);
+        if (actor == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(ApiResponse.error("UNAUTHORIZED", "Valid Authorization header required"));
+        }
+
+        String targetUserId = request != null ? request.getTargetUserId() : null;
+        ApiResponse<String> response = authGrpcClient.logoutAll(actor.userId(), actor.role(), targetUserId);
+
+        HttpStatus status = response.isSuccess() ? HttpStatus.OK : mapAuthStatus(response);
+        return ResponseEntity.status(status).body(response);
+    }
+
     /**
      * GET /api/v1/auth/verify?token=xxx
      * Verify email with confirmation token
@@ -175,6 +206,14 @@ public class AuthController {
     }
 
     private AuthActor requirePrivilegedActor(String authorization) {
+        AuthActor actor = requireAuthenticatedActor(authorization);
+        if (actor == null || !List.of("ADMIN", "SUPER_ADMIN", "DIRECTOR", "MANAGER").contains(actor.role())) {
+            return null;
+        }
+        return actor;
+    }
+
+    private AuthActor requireAuthenticatedActor(String authorization) {
         if (authorization == null || !authorization.startsWith("Bearer ")) {
             return null;
         }
@@ -186,11 +225,19 @@ public class AuthController {
 
         var claims = jwtUtil.extractAllClaims(token);
         String role = claims.get("role", String.class);
-        if (!List.of("ADMIN", "SUPER_ADMIN", "DIRECTOR", "MANAGER").contains(role)) {
-            return null;
-        }
 
         return new AuthActor(claims.getSubject(), role);
+    }
+
+    private HttpStatus mapAuthStatus(ApiResponse<?> response) {
+        if (response.getError() == null || response.getError().getCode() == null) {
+            return HttpStatus.BAD_REQUEST;
+        }
+        return switch (response.getError().getCode()) {
+            case "FORBIDDEN" -> HttpStatus.FORBIDDEN;
+            case "UNAUTHORIZED", "INVALID_REFRESH" -> HttpStatus.UNAUTHORIZED;
+            default -> HttpStatus.BAD_REQUEST;
+        };
     }
 
     private record AuthActor(String userId, String role) {
