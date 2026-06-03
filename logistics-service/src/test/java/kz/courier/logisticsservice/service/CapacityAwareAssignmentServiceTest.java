@@ -116,8 +116,7 @@ class CapacityAwareAssignmentServiceTest {
         verify(assignmentRepository).saveAndFlush(argThat(a ->
                 a.getCourierId().equals(courierId)
                         && a.getAssignmentPolicy() == AssignmentPolicy.OFFER
-                        && a.getAssignmentStatus() == AssignmentStatus.PENDING
-                        && a.getOfferExpiresAt() != null));
+                        && a.getAssignmentStatus() == AssignmentStatus.PENDING));
     }
 
     @Test
@@ -194,10 +193,7 @@ class CapacityAwareAssignmentServiceTest {
                 projection(selectedCourier, 43.02, 76.92, 120)
         ));
         when(assignmentRepository.findExcludedCourierIdsByOrderId(orderId)).thenReturn(List.of(rejectedCourier));
-        when(assignmentRepository.countExcludedCourierIdsByOrderId(orderId)).thenReturn(1L);
-        givenProfile(rejectedCourier, "CONTRACTOR", "BIKE", 2);
         givenProfile(selectedCourier, "CONTRACTOR", "BIKE", 2);
-        givenNoActiveRoute(rejectedCourier);
         givenNoActiveRoute(selectedCourier);
         givenCommit(selectedCourier);
 

@@ -279,6 +279,7 @@ GET /api/v1/orders?status=READY&page=1&size=20&sort=createdAt,desc
 | `GET` | `/fallback/auth` | Auth circuit breaker fallback | Public |
 | `GET` | `/fallback/order` | Order circuit breaker fallback | Public |
 | `GET` | `/fallback/courier` | Courier circuit breaker fallback | Public |
+| `ANY` | `/actuator/**` | (Debug/Internal) Spring Boot actuator metrics/health | Public |
 
 ## User Service
 
