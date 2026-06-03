@@ -19,6 +19,7 @@ This repository is a multi-service Spring Boot application built as a Maven reac
 - Kafka on `kafka:9092` inside Docker and `KAFKA_EXTERNAL_PORT` from the host
 - Redis on `REDIS_PORT` for API Gateway rate limiting
 - Eureka for service discovery
+- Prometheus and Grafana for local observability. See [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md).
 
 ## Local Run
 

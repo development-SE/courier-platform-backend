@@ -37,6 +37,7 @@ public class OfferTimeoutScheduler {
     private final RouteCleanupService routeCleanupService;
     private final SystemPrincipalRunner systemPrincipalRunner;
     private final PlatformTransactionManager transactionManager;
+    private final AssignmentMetrics assignmentMetrics;
 
     @Value("${assignment.offer-timeout.enabled:true}")
     private boolean enabled;
@@ -106,6 +107,9 @@ public class OfferTimeoutScheduler {
         assignment.setCancellationReason("offer-timeout");
         assignmentRepository.save(assignment);
         routeCleanupService.cleanupAssignment(assignment, "offer-timeout", false);
+        assignmentMetrics.recordTimedOut("offer-timeout");
+        log.info("[AssignmentLifecycle] offer timed out assignmentId={} orderId={} courierId={} reason=offer-timeout",
+                assignment.getId(), assignment.getOrderId(), assignment.getCourierId());
 
         historyRepository.save(AssignmentHistory.builder()
                 .assignmentId(assignment.getId())

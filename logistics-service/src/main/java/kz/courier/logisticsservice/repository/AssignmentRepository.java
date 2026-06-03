@@ -29,6 +29,10 @@ public interface AssignmentRepository extends JpaRepository<CourierAssignment, U
 
     Page<CourierAssignment> findAllByAssignmentStatus(AssignmentStatus status, Pageable pageable);
 
+    long countByAssignmentStatus(AssignmentStatus status);
+
+    long countByAssignmentStatusNotIn(Collection<AssignmentStatus> statuses);
+
     @Query("""
 
             SELECT a FROM CourierAssignment a

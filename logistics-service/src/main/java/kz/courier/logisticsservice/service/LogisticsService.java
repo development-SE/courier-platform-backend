@@ -68,6 +68,7 @@ public class LogisticsService {
     private final CapacityAwareAssignmentService capacityAwareAssignmentService;
     private final AssignmentRetryScheduler assignmentRetryScheduler;
     private final RouteCleanupService routeCleanupService;
+    private final AssignmentMetrics assignmentMetrics;
 
     // =========================================================================
     //  Assignment - Create
@@ -223,7 +224,8 @@ public class LogisticsService {
 
         UUID changedBy = gatewayPrincipalProvider.requireCurrentUserId();
         recordHistory(id, oldStatus, req.newStatus(), changedBy, req.reason());
-        log.info("Assignment {} transitioned {} -> {}", id, oldStatus, req.newStatus());
+        log.info("[AssignmentLifecycle] assignment status changed assignmentId={} orderId={} courierId={} statusFrom={} statusTo={} reason={}",
+                id, assignment.getOrderId(), assignment.getCourierId(), oldStatus, req.newStatus(), req.reason());
 
         eventPublisher.publishStatusChanged(
                 id, assignment.getOrderId(), assignment.getCourierId(),
@@ -761,8 +763,25 @@ public class LogisticsService {
                 || newStatus == AssignmentStatus.FAILED;
         RouteCleanupService.CleanupResult cleanup =
                 routeCleanupService.cleanupAssignment(assignment, reason, reassignRequired);
+        if (newStatus == AssignmentStatus.REJECTED) {
+            assignmentMetrics.recordRejected(reason);
+            log.info("[AssignmentLifecycle] offer rejected assignmentId={} orderId={} courierId={} reason={}",
+                    assignment.getId(), assignment.getOrderId(), assignment.getCourierId(), reason);
+        }
+        if (newStatus == AssignmentStatus.TIMED_OUT) {
+            assignmentMetrics.recordTimedOut(reason);
+            log.info("[AssignmentLifecycle] offer timed out assignmentId={} orderId={} courierId={} reason={}",
+                    assignment.getId(), assignment.getOrderId(), assignment.getCourierId(), reason);
+        }
+        if (newStatus == AssignmentStatus.FAILED) {
+            assignmentMetrics.recordFailure("unknown", reason);
+            log.info("[AssignmentLifecycle] assignment failed assignmentId={} orderId={} courierId={} reason={}",
+                    assignment.getId(), assignment.getOrderId(), assignment.getCourierId(), reason);
+        }
 
         if (cleanup.reassignmentRequested()) {
+            log.info("[AssignmentLifecycle] reassignment triggered orderId={} assignmentId={} reason={}",
+                    assignment.getOrderId(), assignment.getId(), reason);
             scheduleReassignmentAfterCommit(assignment.getOrderId(), newStatus, reason);
         }
     }

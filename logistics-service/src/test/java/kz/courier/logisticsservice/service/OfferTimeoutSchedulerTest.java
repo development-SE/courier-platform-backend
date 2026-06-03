@@ -35,6 +35,7 @@ class OfferTimeoutSchedulerTest {
     @Mock CapacityAwareAssignmentService assignmentService;
     @Mock RouteCleanupService routeCleanupService;
     @Mock SystemPrincipalRunner systemPrincipalRunner;
+    @Mock AssignmentMetrics assignmentMetrics;
 
     @Test
     void timeoutBatchContinuesAfterOneItemFails() {
@@ -48,7 +49,8 @@ class OfferTimeoutSchedulerTest {
                 assignmentService,
                 routeCleanupService,
                 systemPrincipalRunner,
-                transactionManager());
+                transactionManager(),
+                assignmentMetrics);
         ReflectionTestUtils.setField(scheduler, "enabled", true);
         ReflectionTestUtils.setField(scheduler, "offerTimeoutSeconds", 300L);
         ReflectionTestUtils.setField(scheduler, "batchSize", 20);

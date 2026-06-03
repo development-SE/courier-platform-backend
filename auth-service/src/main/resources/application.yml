@@ -36,7 +36,7 @@ spring:
       group-id: auth-service
       auto-offset-reset: earliest
   main:
-    web-application-type: none
+    web-application-type: servlet
 
 notification-kafka-topic: ${NOTIFICATION_KAFKA_TOPIC:notification-kafka-topic}
 
@@ -81,10 +81,13 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,metrics,prometheus
   endpoint:
     health:
       show-details: always
+  metrics:
+    tags:
+      application: ${spring.application.name}
 
 # Logging
 logging:

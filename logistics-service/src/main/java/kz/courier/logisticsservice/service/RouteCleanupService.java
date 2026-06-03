@@ -36,6 +36,7 @@ public class RouteCleanupService {
     private final AssignmentEventPublisher eventPublisher;
     private final SystemPrincipalRunner systemPrincipalRunner;
     private final GatewayPrincipalProvider gatewayPrincipalProvider;
+    private final AssignmentMetrics assignmentMetrics;
 
     @Transactional
     public CleanupResult cleanupAssignment(UUID assignmentId, String reason, boolean reassignRequired) {
@@ -51,11 +52,19 @@ public class RouteCleanupService {
                 : assignmentRepository.lockById(assignment.getId())
                         .orElseThrow(() -> new AssignmentNotFoundException(assignment.getId()));
 
+        log.info("[RouteCleanup] cleanup started assignmentId={} orderId={} routeId={} reason={}",
+                locked.getId(), locked.getOrderId(), locked.getRouteId(), reason);
         boolean alreadyCleaned = locked.getRouteCleanedAt() != null;
         boolean capacityReleased = cleanupRouteImpact(locked, reason);
         int stopsCancelled = cancelUncompletedStops(locked);
         boolean routeCompleted = completeRouteIfEmpty(locked.getRouteId());
         boolean reassignmentRequested = isReassignmentEligible(locked.getOrderId(), reassignRequired);
+        if (capacityReleased || stopsCancelled > 0 || routeCompleted) {
+            assignmentMetrics.recordCleanup(reason);
+        }
+        log.info("[RouteCleanup] cleanup completed assignmentId={} orderId={} routeId={} capacityReleased={} stopsCancelled={} routeCompleted={} alreadyCleaned={} reassignmentRequested={} reason={}",
+                locked.getId(), locked.getOrderId(), locked.getRouteId(), capacityReleased,
+                stopsCancelled, routeCompleted, alreadyCleaned, reassignmentRequested, reason);
 
         return new CleanupResult(
                 locked.getId(),
@@ -114,6 +123,8 @@ public class RouteCleanupService {
         assignment.setRouteCleanupReason(truncateReason(reason));
         assignment.setRouteCleanupBy(resolveCleanupActor());
         assignmentRepository.save(assignment);
+        log.info("[RouteCleanup] route load released assignmentId={} orderId={} routeId={} demandUnits={}",
+                assignment.getId(), assignment.getOrderId(), assignment.getRouteId(), assignment.getDemandUnits());
         return true;
     }
 
@@ -138,6 +149,8 @@ public class RouteCleanupService {
                 .toList();
         if (!changed.isEmpty()) {
             routeStopRepository.saveAll(changed);
+            log.info("[RouteCleanup] route stops cancelled assignmentId={} orderId={} routeId={} count={}",
+                    assignment.getId(), assignment.getOrderId(), assignment.getRouteId(), changed.size());
         }
         return changed.size();
     }
@@ -156,6 +169,7 @@ public class RouteCleanupService {
                     if (!hasActiveStops && route.getStatus() == RouteStatus.ACTIVE) {
                         route.setStatus(RouteStatus.COMPLETED);
                         routeRepository.save(route);
+                        log.info("[RouteCleanup] empty route completed routeId={}", routeId);
                         return true;
                     }
                     return false;

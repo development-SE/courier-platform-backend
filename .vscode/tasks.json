@@ -19,7 +19,7 @@
                                            "showReuseMessage":  false
                                        },
                       "options":  {
-                                      "cwd":  "C:\\Users\\dilda\\Downloads\\courier-platform-backend\\eureka-server"
+                                      "cwd":  "C:\\Users\\LENOVO\\Desktop\\JavaThings\\courier-platform-backend_main\\eureka-server"
                                   }
                   },
                   {
@@ -40,7 +40,7 @@
                                            "showReuseMessage":  false
                                        },
                       "options":  {
-                                      "cwd":  "C:\\Users\\dilda\\Downloads\\courier-platform-backend\\auth-service"
+                                      "cwd":  "C:\\Users\\LENOVO\\Desktop\\JavaThings\\courier-platform-backend_main\\auth-service"
                                   }
                   },
                   {
@@ -61,7 +61,7 @@
                                            "showReuseMessage":  false
                                        },
                       "options":  {
-                                      "cwd":  "C:\\Users\\dilda\\Downloads\\courier-platform-backend\\api-gateway"
+                                      "cwd":  "C:\\Users\\LENOVO\\Desktop\\JavaThings\\courier-platform-backend_main\\api-gateway"
                                   }
                   },
                   {
@@ -82,7 +82,7 @@
                                            "showReuseMessage":  false
                                        },
                       "options":  {
-                                      "cwd":  "C:\\Users\\dilda\\Downloads\\courier-platform-backend\\user-service"
+                                      "cwd":  "C:\\Users\\LENOVO\\Desktop\\JavaThings\\courier-platform-backend_main\\user-service"
                                   }
                   },
                   {
@@ -103,7 +103,7 @@
                                            "showReuseMessage":  false
                                        },
                       "options":  {
-                                      "cwd":  "C:\\Users\\dilda\\Downloads\\courier-platform-backend\\order-service"
+                                      "cwd":  "C:\\Users\\LENOVO\\Desktop\\JavaThings\\courier-platform-backend_main\\order-service"
                                   }
                   },
                   {
@@ -124,7 +124,7 @@
                                            "showReuseMessage":  false
                                        },
                       "options":  {
-                                      "cwd":  "C:\\Users\\dilda\\Downloads\\courier-platform-backend\\companyservice"
+                                      "cwd":  "C:\\Users\\LENOVO\\Desktop\\JavaThings\\courier-platform-backend_main\\companyservice"
                                   }
                   },
                   {
@@ -145,7 +145,7 @@
                                            "showReuseMessage":  false
                                        },
                       "options":  {
-                                      "cwd":  "C:\\Users\\dilda\\Downloads\\courier-platform-backend\\notification"
+                                      "cwd":  "C:\\Users\\LENOVO\\Desktop\\JavaThings\\courier-platform-backend_main\\notification"
                                   }
                   },
                   {
@@ -166,7 +166,28 @@
                                            "showReuseMessage":  false
                                        },
                       "options":  {
-                                      "cwd":  "C:\\Users\\dilda\\Downloads\\courier-platform-backend\\courierservice"
+                                      "cwd":  "C:\\Users\\LENOVO\\Desktop\\JavaThings\\courier-platform-backend_main\\courierservice"
+                                  }
+                  },
+                  {
+                      "label":  "Run: logistics-service",
+                      "problemMatcher":  [
+
+                                         ],
+                      "command":  ".\\\\mvnw.cmd",
+                      "type":  "shell",
+                      "args":  [
+                                   "spring-boot:run"
+                               ],
+                      "presentation":  {
+                                           "label":  "logistics-service",
+                                           "reveal":  "always",
+                                           "panel":  "new",
+                                           "close":  false,
+                                           "showReuseMessage":  false
+                                       },
+                      "options":  {
+                                      "cwd":  "C:\\Users\\LENOVO\\Desktop\\JavaThings\\courier-platform-backend_main\\logistics-service"
                                   }
                   },
                   {
@@ -182,7 +203,8 @@
                                         "Run: order-service",
                                         "Run: companyservice",
                                         "Run: notification",
-                                        "Run: courierservice"
+                                        "Run: courierservice",
+                                        "Run: logistics-service"
                                     ],
                       "dependsOrder":  "parallel"
                   }

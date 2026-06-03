@@ -17,6 +17,8 @@ public interface CourierRouteRepository extends JpaRepository<CourierRoute, UUID
 
     Optional<CourierRoute> findByCourierIdAndStatus(UUID courierId, RouteStatus status);
 
+    long countByStatus(RouteStatus status);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
         SELECT r FROM CourierRoute r

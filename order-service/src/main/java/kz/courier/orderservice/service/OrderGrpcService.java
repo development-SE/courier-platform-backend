@@ -131,9 +131,11 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
                     .build();
 
             order = orderRepository.save(order);
-            log.info("[gRPC] Order created id={}", order.getId());
+            log.info("[OrderLifecycle] order created orderId={} authorId={} companyId={} status={} serviceType={}",
+                    order.getId(), order.getAuthorId(), order.getCompanyId(), order.getStatus(), order.getServiceType());
             orderEventPublisher.publishCreatedAfterCommit(order);
             if (order.getStatus() == kz.courier.orderservice.model.OrderStatus.READY) {
+                log.info("[OrderLifecycle] order moved to READY orderId={} reason=custom-order", order.getId());
                 orderEventPublisher.publishReadyAfterCommit(order);
             }
 
@@ -271,10 +273,17 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
                 return;
             }
 
+            kz.courier.orderservice.model.OrderStatus oldStatus = order.getStatus();
             order.setStatus(newStatus);
             orderRepository.save(order);
+            log.info("[OrderLifecycle] order status changed orderId={} statusFrom={} statusTo={} actorId={}",
+                    order.getId(), oldStatus, newStatus, caller.userId());
+            if (newStatus == kz.courier.orderservice.model.OrderStatus.CANCELLED) {
+                log.info("[OrderLifecycle] order cancelled orderId={} actorId={}", order.getId(), caller.userId());
+            }
             orderEventPublisher.publishStatusChangedAfterCommit(order);
             if (newStatus == kz.courier.orderservice.model.OrderStatus.READY) {
+                log.info("[OrderLifecycle] order moved to READY orderId={} reason=status-update", order.getId());
                 orderEventPublisher.publishReadyAfterCommit(order);
             }
 

@@ -45,6 +45,7 @@ class RouteCleanupServiceTest {
     @Mock AssignmentEventPublisher eventPublisher;
     @Mock SystemPrincipalRunner systemPrincipalRunner;
     @Mock GatewayPrincipalProvider gatewayPrincipalProvider;
+    @Mock AssignmentMetrics assignmentMetrics;
 
     RouteCleanupService service;
     UUID assignmentId;
@@ -63,7 +64,8 @@ class RouteCleanupServiceTest {
                 orderGrpcClient,
                 eventPublisher,
                 systemPrincipalRunner,
-                gatewayPrincipalProvider);
+                gatewayPrincipalProvider,
+                assignmentMetrics);
         assignmentId = UUID.randomUUID();
         orderId = UUID.randomUUID();
         routeId = UUID.randomUUID();
