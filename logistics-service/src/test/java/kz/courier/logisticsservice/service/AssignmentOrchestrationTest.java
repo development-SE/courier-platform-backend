@@ -50,6 +50,42 @@ class AssignmentOrchestrationTest {
     }
 
     @Test
+    void should_IgnoreAutoAssignment_When_OrderStatusIsNew() {
+        OrderCreatedEventListener listener = new OrderCreatedEventListener(
+                new ObjectMapper(), assignmentService, systemPrincipalRunner, routeCleanupService);
+
+        listener.onOrderCreated("""
+                {"eventType":"ORDER_CREATED","orderId":"%s","status":"NEW","serviceType":"STANDARD"}
+                """.formatted(UUID.randomUUID()));
+
+        verify(assignmentService, never()).autoAssign(any());
+    }
+
+    @Test
+    void should_IgnoreAutoAssignment_When_OrderStatusIsAccepted() {
+        OrderCreatedEventListener listener = new OrderCreatedEventListener(
+                new ObjectMapper(), assignmentService, systemPrincipalRunner, routeCleanupService);
+
+        listener.onOrderCreated("""
+                {"eventType":"ORDER_STATUS_CHANGED","orderId":"%s","status":"ACCEPTED","serviceType":"STANDARD"}
+                """.formatted(UUID.randomUUID()));
+
+        verify(assignmentService, never()).autoAssign(any());
+    }
+
+    @Test
+    void should_IgnoreAutoAssignment_When_OrderStatusIsPreparing() {
+        OrderCreatedEventListener listener = new OrderCreatedEventListener(
+                new ObjectMapper(), assignmentService, systemPrincipalRunner, routeCleanupService);
+
+        listener.onOrderCreated("""
+                {"eventType":"ORDER_STATUS_CHANGED","orderId":"%s","status":"PREPARING","serviceType":"STANDARD"}
+                """.formatted(UUID.randomUUID()));
+
+        verify(assignmentService, never()).autoAssign(any());
+    }
+
+    @Test
     void orderCreatedListenerIgnoresAlreadyAssignedOrders() {
         UUID orderId = UUID.randomUUID();
         OrderCreatedEventListener listener = new OrderCreatedEventListener(
@@ -61,6 +97,24 @@ class AssignmentOrchestrationTest {
                 """.formatted(orderId));
 
         verify(assignmentService, never()).autoAssign(any());
+    }
+
+    @Test
+    void should_ReassignOrder_When_StatusIsAssignmentPending() {
+        UUID orderId = UUID.randomUUID();
+        OrderCreatedEventListener listener = new OrderCreatedEventListener(
+                new ObjectMapper(), assignmentService, systemPrincipalRunner, routeCleanupService);
+        when(assignmentService.hasActiveAssignment(orderId)).thenReturn(false);
+        when(systemPrincipalRunner.run(any())).thenAnswer(invocation -> {
+            Supplier<?> supplier = invocation.getArgument(0);
+            return supplier.get();
+        });
+
+        listener.onOrderCreated("""
+                {"eventType":"ORDER_STATUS_CHANGED","orderId":"%s","status":"ASSIGNMENT_PENDING","serviceType":"STANDARD"}
+                """.formatted(orderId));
+
+        verify(assignmentService).autoAssign(orderId);
     }
 
     @Test

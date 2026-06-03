@@ -102,6 +102,25 @@ class CapacityAwareAssignmentServiceTest {
     }
 
     @Test
+    void should_CreatePendingOffer_When_SelectedCourierIsContractor() {
+        UUID courierId = UUID.randomUUID();
+        givenNearby(courierId, 43.01, 76.91, 150);
+        givenProfile(courierId, "CONTRACTOR", "BIKE", 2);
+        givenNoActiveRoute(courierId);
+        givenCommit(courierId);
+
+        LogisticsDto.AutoAssignResponse response = service.autoAssign(orderId);
+
+        assertThat(response.assignmentStatus()).isEqualTo(AssignmentStatus.PENDING);
+        assertThat(response.courierId()).isEqualTo(courierId);
+        verify(assignmentRepository).saveAndFlush(argThat(a ->
+                a.getCourierId().equals(courierId)
+                        && a.getAssignmentPolicy() == AssignmentPolicy.OFFER
+                        && a.getAssignmentStatus() == AssignmentStatus.PENDING
+                        && a.getOfferExpiresAt() != null));
+    }
+
+    @Test
     void rejectsCourierWithInsufficientCapacity() {
         UUID courierId = UUID.randomUUID();
         when(orderGrpcClient.getOrder(orderId)).thenReturn(order(ParcelSize.LARGE));
@@ -164,6 +183,52 @@ class CapacityAwareAssignmentServiceTest {
 
         assertThat(response.assignmentStatus()).isEqualTo(AssignmentStatus.PENDING);
         assertThat(response.courierId()).isEqualTo(courierId);
+    }
+
+    @Test
+    void should_ExcludePreviouslyRejectedOrTimedOutCouriers_When_ReassigningSameOrder() {
+        UUID rejectedCourier = UUID.randomUUID();
+        UUID selectedCourier = UUID.randomUUID();
+        givenNearby(List.of(
+                projection(rejectedCourier, 43.01, 76.91, 100),
+                projection(selectedCourier, 43.02, 76.92, 120)
+        ));
+        when(assignmentRepository.findExcludedCourierIdsByOrderId(orderId)).thenReturn(List.of(rejectedCourier));
+        when(assignmentRepository.countExcludedCourierIdsByOrderId(orderId)).thenReturn(1L);
+        givenProfile(rejectedCourier, "CONTRACTOR", "BIKE", 2);
+        givenProfile(selectedCourier, "CONTRACTOR", "BIKE", 2);
+        givenNoActiveRoute(rejectedCourier);
+        givenNoActiveRoute(selectedCourier);
+        givenCommit(selectedCourier);
+
+        LogisticsDto.AutoAssignResponse response = service.autoAssign(orderId);
+
+        assertThat(response.courierId()).isEqualTo(selectedCourier);
+        verify(assignmentRepository).saveAndFlush(argThat(a -> selectedCourier.equals(a.getCourierId())));
+    }
+
+    @Test
+    void should_DelayAssignment_When_StandardOrderBatchingWindowNotElapsed() {
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "standardBatchingWindowSeconds", 120L);
+        when(orderGrpcClient.getOrder(orderId)).thenReturn(new OrderGrpcClient.OrderSnapshot(
+                orderId,
+                OrderStatus.READY,
+                ServiceType.STANDARD,
+                null,
+                43.00,
+                76.90,
+                43.05,
+                76.95,
+                ParcelSize.SMALL,
+                1,
+                "pickup",
+                OffsetDateTime.now().minusSeconds(30)));
+
+        LogisticsDto.AutoAssignResponse response = service.autoAssign(orderId);
+
+        assertThat(response.assignmentStatus()).isEqualTo(AssignmentStatus.MANUAL_REQUIRED);
+        assertThat(response.failureMessage()).isEqualTo("STANDARD order is waiting for batching window");
+        verify(locationRepository, never()).findNearbyCouriers(anyDouble(), anyDouble(), anyDouble(), anyInt());
     }
 
     @Test

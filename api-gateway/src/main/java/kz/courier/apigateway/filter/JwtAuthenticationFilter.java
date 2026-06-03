@@ -59,10 +59,18 @@ public class JwtAuthenticationFilter extends AbstractGatewayFilterFactory<JwtAut
 
                 // Add user info to headers for downstream services
                 ServerHttpRequest modifiedRequest = exchange.getRequest().mutate()
-                        .header("X-User-Id", userId)
-                        .header("X-Username", forwardedUsername)
-                        .header("X-User-Roles", role)
-                        .header("X-Company-Id", companyId != null ? companyId : "") 
+                        .headers(headers -> {
+                            headers.remove("X-User-Id");
+                            headers.remove("X-Username");
+                            headers.remove("X-User-Roles");
+                            headers.remove("X-Company-Id");
+                            headers.set("X-User-Id", userId);
+                            headers.set("X-Username", forwardedUsername);
+                            headers.set("X-User-Roles", role);
+                            if (companyId != null && !companyId.isBlank()) {
+                                headers.set("X-Company-Id", companyId);
+                            }
+                        })
                         .build();
 
                 log.debug("JWT validated successfully for user: {}", forwardedUsername);
