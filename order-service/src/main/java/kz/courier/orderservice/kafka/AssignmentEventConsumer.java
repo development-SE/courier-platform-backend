@@ -8,6 +8,7 @@ import kz.courier.orderservice.repository.OrderRepository;
 import kz.courier.orderservice.service.DeliveryConfirmationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -37,13 +38,22 @@ public class AssignmentEventConsumer {
 
     @KafkaListener(topics = TOPIC_CREATED, groupId = "order-service")
     @Transactional
-    public void onAssignmentCreated(String payload) {
-        try {
-            AssignmentCreatedEvent event =
-                    objectMapper.readValue(payload, AssignmentCreatedEvent.class);
+    public void onAssignmentCreated(ConsumerRecord<String, String> record) {
+        handleAssignmentCreated(record.value(), record.topic(), record.key(), record.partition(), record.offset());
+    }
 
-            Order order = orderRepository.findById(event.orderId())
-                    .orElseThrow(() -> new OrderNotFoundException(event.orderId().toString()));
+    public void onAssignmentCreated(String payload) {
+        handleAssignmentCreated(payload, TOPIC_CREATED, null, -1, -1);
+    }
+
+    private void handleAssignmentCreated(String payload, String topic, String key, int partition, long offset) {
+        AssignmentCreatedEvent event = null;
+        try {
+            event = objectMapper.readValue(payload, AssignmentCreatedEvent.class);
+
+            UUID orderId = event.orderId();
+            Order order = orderRepository.findById(orderId)
+                    .orElseThrow(() -> new OrderNotFoundException(orderId.toString()));
 
             OrderStatus mappedStatus = mapAssignmentStatus(
                     event.assignmentStatus() != null ? event.assignmentStatus() : AssignmentStatus.ASSIGNED);
@@ -52,23 +62,38 @@ public class AssignmentEventConsumer {
             }
             orderRepository.save(order);
 
-            log.info("[AssignmentConsumer] Assignment created synced orderId={} courierId={} status={}",
-                    order.getId(), event.courierId(), order.getStatus());
+            log.info("[AssignmentConsumer] Assignment created synced orderId={} assignmentId={} courierId={} status={} topic={} partition={} offset={}",
+                    order.getId(), event.assignmentId(), event.courierId(), order.getStatus(),
+                    topic, partition, offset);
         } catch (Exception e) {
-            log.error("[AssignmentConsumer] Failed to consume assignment created payload={}", payload, e);
+            log.error("[AssignmentConsumer] Failed to consume assignment created topic={} key={} partition={} offset={} assignmentId={} orderId={} courierId={} exception={} message={}",
+                    topic, key, partition, offset,
+                    event != null ? event.assignmentId() : null,
+                    event != null ? event.orderId() : null,
+                    event != null ? event.courierId() : null,
+                    e.getClass().getSimpleName(), e.getMessage(), e);
             throw new IllegalStateException("Failed to consume assignment created event", e);
         }
     }
 
     @KafkaListener(topics = TOPIC_UPDATED, groupId = "order-service")
     @Transactional
-    public void onAssignmentUpdated(String payload) {
-        try {
-            AssignmentStatusChangedEvent event =
-                    objectMapper.readValue(payload, AssignmentStatusChangedEvent.class);
+    public void onAssignmentUpdated(ConsumerRecord<String, String> record) {
+        handleAssignmentUpdated(record.value(), record.topic(), record.key(), record.partition(), record.offset());
+    }
 
-            Order order = orderRepository.findById(event.orderId())
-                    .orElseThrow(() -> new OrderNotFoundException(event.orderId().toString()));
+    public void onAssignmentUpdated(String payload) {
+        handleAssignmentUpdated(payload, TOPIC_UPDATED, null, -1, -1);
+    }
+
+    private void handleAssignmentUpdated(String payload, String topic, String key, int partition, long offset) {
+        AssignmentStatusChangedEvent event = null;
+        try {
+            event = objectMapper.readValue(payload, AssignmentStatusChangedEvent.class);
+
+            UUID orderId = event.orderId();
+            Order order = orderRepository.findById(orderId)
+                    .orElseThrow(() -> new OrderNotFoundException(orderId.toString()));
 
             OrderStatus mappedStatus = mapAssignmentStatus(event.newStatus());
             if (mappedStatus != null && !isTerminal(order.getStatus())) {
@@ -81,12 +106,18 @@ public class AssignmentEventConsumer {
                         event.orderId(), event.courierId());
             }
 
-            log.info("[AssignmentConsumer] Assignment status synced orderId={} assignmentStatus={} orderStatus={}",
-                    order.getId(), event.newStatus(), order.getStatus());
+            log.info("[AssignmentConsumer] Assignment status synced orderId={} assignmentId={} courierId={} assignmentStatus={} orderStatus={} topic={} partition={} offset={}",
+                    order.getId(), event.assignmentId(), event.courierId(), event.newStatus(), order.getStatus(),
+                    topic, partition, offset);
 
 
         } catch (Exception e) {
-            log.error("[AssignmentConsumer] Failed to consume assignment updated payload={}", payload, e);
+            log.error("[AssignmentConsumer] Failed to consume assignment updated topic={} key={} partition={} offset={} assignmentId={} orderId={} courierId={} exception={} message={}",
+                    topic, key, partition, offset,
+                    event != null ? event.assignmentId() : null,
+                    event != null ? event.orderId() : null,
+                    event != null ? event.courierId() : null,
+                    e.getClass().getSimpleName(), e.getMessage(), e);
             throw new IllegalStateException("Failed to consume assignment updated event", e);
         }
     }

@@ -27,6 +27,8 @@ import kz.courier.auth.v1.ListUsersRequest;
 import kz.courier.auth.v1.ListUsersResponse;
 import kz.courier.auth.v1.LoginRequest;
 import kz.courier.auth.v1.LoginResponse;
+import kz.courier.auth.v1.LogoutAllRequest;
+import kz.courier.auth.v1.LogoutRequest;
 import kz.courier.auth.v1.RefreshTokenRequest;
 import kz.courier.auth.v1.RefreshTokenResponse;
 import kz.courier.auth.v1.RegisterRequest;
@@ -36,11 +38,13 @@ import kz.courier.auth.v1.VerifyEmailRequest;
 import kz.courier.authservice.dto.NotificationEvent;
 import kz.courier.authservice.model.ConfirmationToken;
 import kz.courier.authservice.model.LoginLog;
+import kz.courier.authservice.model.RefreshToken;
 import kz.courier.authservice.model.Role;
 import kz.courier.authservice.model.TokenType;
 import kz.courier.authservice.model.User;
 import kz.courier.authservice.repository.ConfirmationTokenRepository;
 import kz.courier.authservice.repository.LoginLogRepository;
+import kz.courier.authservice.repository.RefreshTokenRepository;
 import kz.courier.authservice.repository.UserRepository;
 import kz.courier.common.v1.Error;
 import kz.courier.common.v1.PaginationResponse;
@@ -58,8 +62,10 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
     private final UserRepository userRepo;
     private final ConfirmationTokenRepository tokenRepo;
     private final LoginLogRepository logRepo;
+    private final RefreshTokenRepository refreshTokenRepo;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
+    private final RefreshTokenHasher refreshTokenHasher;
     private final NotificationProducer notificationProducer;
     @Value("${app.api.base-url}")
     private String apiBaseUrl;
@@ -88,10 +94,6 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
             validatePassword(req.getPassword());
             validateNames(req.getFirstName(), req.getLastName());
 
-            System.out.println("USER IS creating------");
-            System.out.println(req.getPassword());
-
-
             // ---- create user ------------------------------------------------
             UUID companyId = req.hasCompanyId() && !req.getCompanyId().isBlank()
                     ? UUID.fromString(req.getCompanyId())
@@ -110,8 +112,8 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
                     .createdAt(LocalDateTime.now())
                     .updatedAt(LocalDateTime.now())
                     .build();
-            log.debug("Saving new user: {}", req.getEmail());
             user = userRepo.save(user);
+            log.info("Registered auth user userId={} role={}", user.getId(), user.getRole());
 
             // ---- confirmation token -----------------------------------------
             String token = UUID.randomUUID().toString();
@@ -144,7 +146,6 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
             RegisterResponse reply = RegisterResponse.newBuilder()
                     .setResponse(successResponse())
                     .setUserId(user.getId().toString())
-                    .setConfirmationToken(token)
                     .build();
 
             responseObserver.onNext(reply);
@@ -226,7 +227,6 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
             RegisterResponse reply = RegisterResponse.newBuilder()
                     .setResponse(successResponse())
                     .setUserId(user.getId().toString())
-                    .setConfirmationToken(token)
                     .build();
 
             responseObserver.onNext(reply);
@@ -266,7 +266,8 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
                 user.getRole().name(),
                 user.getCompanyId()  // ← need to add this field to User entity
             );
-            String refresh = jwtService.generateRefreshToken(user.getId());
+            JwtService.RefreshTokenDetails refresh = jwtService.generateRefreshToken(user.getId());
+            storeRefreshToken(user, refresh, UUID.randomUUID());
 
             // Success path
             try {
@@ -279,7 +280,7 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
             LoginResponse reply = LoginResponse.newBuilder()
                     .setResponse(successResponse())
                     .setAccessToken(access)
-                    .setRefreshToken(refresh)
+                    .setRefreshToken(refresh.token())
                     .setExpiresAt(Timestamp.newBuilder()
                             .setSeconds(Instant.now().plusSeconds(accessExpiryMin * 60).getEpochSecond())
                             .build())
@@ -297,9 +298,28 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
     public void refreshToken(RefreshTokenRequest req, StreamObserver<RefreshTokenResponse> responseObserver) {
         try {
             Claims claims = jwtService.validateAndGetClaims(req.getRefreshToken());
+            validateRefreshClaims(claims);
             UUID userId = UUID.fromString(claims.getSubject());
             User user = userRepo.findById(userId)
                     .orElseThrow(() -> new IllegalArgumentException("User not found"));
+            if (!user.isActive()) {
+                sendRefreshError(responseObserver, "ACCOUNT_INACTIVE", "Account is disabled");
+                return;
+            }
+
+            String tokenHash = refreshTokenHasher.hash(req.getRefreshToken());
+            RefreshToken current = refreshTokenRepo.findByTokenHash(tokenHash).orElse(null);
+            if (current == null || current.getExpiresAt().isBefore(LocalDateTime.now())) {
+                sendRefreshError(responseObserver, "INVALID_REFRESH", "Refresh token invalid or expired");
+                return;
+            }
+            if (current.getRevokedAt() != null) {
+                revokeTokenFamily(current.getTokenFamilyId());
+                log.warn("Refresh token reuse detected userId={} tokenFamilyId={}",
+                        current.getUser().getId(), current.getTokenFamilyId());
+                sendRefreshError(responseObserver, "INVALID_REFRESH", "Refresh token invalid or expired");
+                return;
+            }
 
             String access = jwtService.generateAccessToken(
                 user.getId(),
@@ -307,12 +327,18 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
                 user.getRole().name(),
                 user.getCompanyId()  // ← need to add this field to User entity
             );
-            String newRefresh = jwtService.generateRefreshToken(userId);
+            JwtService.RefreshTokenDetails newRefresh = jwtService.generateRefreshToken(userId);
+            RefreshToken replacement = storeRefreshToken(user, newRefresh, current.getTokenFamilyId());
+            LocalDateTime now = LocalDateTime.now();
+            current.setRevokedAt(now);
+            current.setReplacedByTokenId(replacement.getId());
+            current.setUpdatedAt(now);
+            refreshTokenRepo.save(current);
 
             RefreshTokenResponse reply = RefreshTokenResponse.newBuilder()
                     .setResponse(successResponse())
                     .setAccessToken(access)
-                    .setRefreshToken(newRefresh)
+                    .setRefreshToken(newRefresh.token())
                     .setExpiresAt(Timestamp.newBuilder()
                             .setSeconds(Instant.now().plusSeconds(accessExpiryMin * 60).getEpochSecond())
                             .build())
@@ -321,8 +347,57 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
             responseObserver.onNext(reply);
             responseObserver.onCompleted();
         } catch (Exception ex) {
-            log.warn("Refresh token failed: {}", ex.getMessage());
+            log.warn("Refresh token validation failed");
             sendRefreshError(responseObserver, "INVALID_REFRESH", "Refresh token invalid or expired");
+        }
+    }
+
+    @Override
+    public void logout(LogoutRequest req, StreamObserver<Response> responseObserver) {
+        try {
+            Claims claims = jwtService.validateAndGetClaims(req.getRefreshToken());
+            validateRefreshClaims(claims);
+
+            String tokenHash = refreshTokenHasher.hash(req.getRefreshToken());
+            refreshTokenRepo.findByTokenHash(tokenHash).ifPresent(token -> {
+                if (token.getRevokedAt() == null) {
+                    LocalDateTime now = LocalDateTime.now();
+                    token.setRevokedAt(now);
+                    token.setUpdatedAt(now);
+                    refreshTokenRepo.save(token);
+                }
+            });
+
+            responseObserver.onNext(successResponse());
+            responseObserver.onCompleted();
+        } catch (Exception e) {
+            log.warn("Logout refresh token validation failed");
+            sendResponseError(responseObserver, "INVALID_REFRESH", "Refresh token invalid or expired");
+        }
+    }
+
+    @Override
+    public void logoutAll(LogoutAllRequest req, StreamObserver<Response> responseObserver) {
+        try {
+            UUID actorUserId = UUID.fromString(req.getActorUserId());
+            UUID targetUserId = req.hasTargetUserId() && !req.getTargetUserId().isBlank()
+                    ? UUID.fromString(req.getTargetUserId())
+                    : actorUserId;
+            Role actorRole = Role.valueOf(req.getActorRole().name());
+
+            if (!actorUserId.equals(targetUserId) && actorRole != Role.ADMIN && actorRole != Role.SUPER_ADMIN) {
+                sendResponseError(responseObserver, "FORBIDDEN", "Only ADMIN or SUPER_ADMIN can revoke another user's sessions");
+                return;
+            }
+
+            revokeAllUserTokens(targetUserId);
+            responseObserver.onNext(successResponse());
+            responseObserver.onCompleted();
+        } catch (IllegalArgumentException e) {
+            sendResponseError(responseObserver, "INVALID_USER", "Invalid user id or role");
+        } catch (Exception e) {
+            log.warn("Logout-all failed");
+            sendResponseError(responseObserver, "INTERNAL_ERROR", "Could not revoke sessions");
         }
     }
 
@@ -543,6 +618,49 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
     }
 
     /* ====================== HELPERS ====================== */
+    private RefreshToken storeRefreshToken(User user, JwtService.RefreshTokenDetails details, UUID tokenFamilyId) {
+        RefreshToken token = RefreshToken.builder()
+                .id(details.tokenId())
+                .user(user)
+                .tokenHash(refreshTokenHasher.hash(details.token()))
+                .issuedAt(LocalDateTime.ofInstant(details.issuedAt(), ZoneOffset.UTC))
+                .expiresAt(LocalDateTime.ofInstant(details.expiresAt(), ZoneOffset.UTC))
+                .tokenFamilyId(tokenFamilyId)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+        return refreshTokenRepo.save(token);
+    }
+
+    private void validateRefreshClaims(Claims claims) {
+        if (!"refresh".equals(claims.get("token_type", String.class))) {
+            throw new IllegalArgumentException("Invalid token type");
+        }
+        if (claims.getId() == null || claims.getId().isBlank()) {
+            throw new IllegalArgumentException("Missing token id");
+        }
+    }
+
+    private void revokeTokenFamily(UUID tokenFamilyId) {
+        LocalDateTime now = LocalDateTime.now();
+        refreshTokenRepo.findByTokenFamilyId(tokenFamilyId).forEach(token -> {
+            if (token.getRevokedAt() == null) {
+                token.setRevokedAt(now);
+                token.setUpdatedAt(now);
+                refreshTokenRepo.save(token);
+            }
+        });
+    }
+
+    private void revokeAllUserTokens(UUID userId) {
+        LocalDateTime now = LocalDateTime.now();
+        refreshTokenRepo.findByUserIdAndRevokedAtIsNull(userId).forEach(token -> {
+            token.setRevokedAt(now);
+            token.setUpdatedAt(now);
+            refreshTokenRepo.save(token);
+        });
+    }
+
     private void fail(StreamObserver<?> obs, String code, String msg) {
         obs.onError(Status.INVALID_ARGUMENT
                 .withDescription(code + ": " + msg)

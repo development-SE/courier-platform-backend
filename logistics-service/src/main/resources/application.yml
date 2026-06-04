@@ -71,6 +71,10 @@ kafka:
   topic:
     order-events: ${ORDER_EVENTS_TOPIC:kafka-order-events}
 
+notification:
+  kafka:
+    topic: ${NOTIFICATION_KAFKA_TOPIC:notification-kafka-topic}
+
 assignment:
   employee-search-timeout-seconds: ${ASSIGNMENT_EMPLOYEE_SEARCH_TIMEOUT_SECONDS:120}
   standard-batching-window-seconds: ${ASSIGNMENT_STANDARD_BATCHING_WINDOW_SECONDS:0}
@@ -93,10 +97,13 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics
+        include: health,info,metrics,prometheus
   endpoint:
     health:
       show-details: always
+  metrics:
+    tags:
+      application: ${spring.application.name}
 
 logging:
   level:

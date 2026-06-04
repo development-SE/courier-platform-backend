@@ -1,0 +1,156 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "links": [],
+  "panels": [
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "id": 1,
+      "targets": [
+        { "expr": "sum by (application) (rate(http_server_requests_seconds_count[5m]))", "legendFormat": "{{application}}" }
+      ],
+      "title": "HTTP Request Rate by Service",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "id": 2,
+      "targets": [
+        { "expr": "histogram_quantile(0.95, sum by (application, le) (rate(http_server_requests_seconds_bucket[5m])))", "legendFormat": "{{application}}" }
+      ],
+      "title": "HTTP p95 Latency by Service",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "id": 3,
+      "targets": [
+        { "expr": "sum by (application, status) (rate(http_server_requests_seconds_count{status=~\"4..|5..\"}[5m]))", "legendFormat": "{{application}} {{status}}" }
+      ],
+      "title": "HTTP 4xx/5xx Error Rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "id": 4,
+      "targets": [
+        { "expr": "sum by (application, area) (jvm_memory_used_bytes)", "legendFormat": "{{application}} {{area}}" }
+      ],
+      "title": "JVM Memory Usage",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "id": 5,
+      "targets": [
+        { "expr": "process_cpu_usage", "legendFormat": "{{application}}" }
+      ],
+      "title": "Process CPU Usage",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "id": 6,
+      "targets": [
+        { "expr": "hikaricp_connections_active", "legendFormat": "{{application}} active" },
+        { "expr": "hikaricp_connections_idle", "legendFormat": "{{application}} idle" },
+        { "expr": "hikaricp_connections_max", "legendFormat": "{{application}} max" }
+      ],
+      "title": "Database Connection Pool Usage",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "id": 7,
+      "targets": [
+        { "expr": "sum by (serviceType, assignmentPolicy) (rate(courier_assignment_attempts_total[5m]))", "legendFormat": "{{serviceType}} {{assignmentPolicy}}" }
+      ],
+      "title": "Courier Assignment Attempts",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "id": 8,
+      "targets": [
+        { "expr": "sum(rate(courier_assignment_success_total[5m]))", "legendFormat": "success" },
+        { "expr": "sum(rate(courier_assignment_failed_total[5m]))", "legendFormat": "failed" }
+      ],
+      "title": "Courier Assignment Success/Failure Rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 32 },
+      "id": 9,
+      "targets": [
+        { "expr": "histogram_quantile(0.95, sum by (le, result) (rate(courier_assignment_duration_seconds_bucket[5m])))", "legendFormat": "{{result}}" }
+      ],
+      "title": "Courier Assignment Duration p95",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 32 },
+      "id": 10,
+      "targets": [
+        { "expr": "courier_pending_offers", "legendFormat": "pending offers" },
+        { "expr": "courier_manual_required_assignments", "legendFormat": "manual required" },
+        { "expr": "courier_active_assignments", "legendFormat": "active assignments" },
+        { "expr": "courier_active_routes", "legendFormat": "active routes" }
+      ],
+      "title": "Assignment and Route Gauges",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 40 },
+      "id": 11,
+      "targets": [
+        { "expr": "sum(rate(courier_assignment_timed_out_total[5m]))", "legendFormat": "timed out" },
+        { "expr": "sum(rate(courier_assignment_manual_required_total[5m]))", "legendFormat": "manual required" },
+        { "expr": "sum(rate(courier_assignment_cleanup_total[5m]))", "legendFormat": "cleanup" }
+      ],
+      "title": "Timed-Out, Manual-Required, and Cleanup Rate",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 39,
+  "tags": ["courier", "spring-boot", "prometheus"],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Courier Platform Observability",
+  "uid": "courier-platform-observability",
+  "version": 1,
+  "weekStart": ""
+}

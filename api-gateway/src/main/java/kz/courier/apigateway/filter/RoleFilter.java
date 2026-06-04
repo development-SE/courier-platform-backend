@@ -1,20 +1,16 @@
 package kz.courier.apigateway.filter;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import kz.courier.apigateway.dto.response.ApiResponse;
+import kz.courier.apigateway.error.GatewayErrorWriter;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cloud.gateway.filter.GatewayFilter;
 import org.springframework.cloud.gateway.filter.factory.AbstractGatewayFilterFactory;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
-import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.List;
 
@@ -22,11 +18,11 @@ import java.util.List;
 @Component
 public class RoleFilter extends AbstractGatewayFilterFactory<RoleFilter.Config> {
 
-    private final ObjectMapper objectMapper;
+    private final GatewayErrorWriter errorWriter;
 
-    public RoleFilter(ObjectMapper objectMapper) {
+    public RoleFilter(GatewayErrorWriter errorWriter) {
         super(Config.class);
-        this.objectMapper = objectMapper;
+        this.errorWriter = errorWriter;
     }
 
     @Override
@@ -60,24 +56,7 @@ public class RoleFilter extends AbstractGatewayFilterFactory<RoleFilter.Config> 
     }
 
     private Mono<Void> onError(ServerWebExchange exchange, String code, String message, HttpStatus status) {
-        exchange.getResponse().setStatusCode(status);
-        exchange.getResponse().getHeaders().setContentType(MediaType.APPLICATION_JSON);
-
-        String errorResponse = toJson(code, message);
-
-        return exchange.getResponse()
-                .writeWith(Mono.just(exchange.getResponse()
-                        .bufferFactory()
-                        .wrap(errorResponse.getBytes(StandardCharsets.UTF_8))));
-    }
-
-    private String toJson(String code, String message) {
-        try {
-            return objectMapper.writeValueAsString(ApiResponse.error(code, message));
-        } catch (JsonProcessingException e) {
-            log.error("Failed to serialize role filter error response", e);
-            return "{\"success\":false,\"error\":{\"code\":\"" + code + "\",\"message\":\"" + message + "\"}}";
-        }
+        return errorWriter.write(exchange, status, code, message);
     }
 
     @Override

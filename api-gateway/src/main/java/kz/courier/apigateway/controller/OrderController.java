@@ -4,6 +4,8 @@ import java.time.OffsetDateTime;
 import java.util.Map;
 
 import io.jsonwebtoken.ExpiredJwtException;
+import kz.courier.apigateway.error.GatewayErrorWriter;
+import kz.courier.common.error.StandardErrorResponse;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -18,6 +20,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.server.ServerWebExchange;
 
 import kz.courier.apigateway.dto.request.order.CreateOrderRequestDto;
 import kz.courier.apigateway.dto.request.order.OrderListFilterDto;
@@ -59,57 +62,62 @@ public class OrderController {
 
     private final OrderClient orderClient;
     private final JwtUtil     jwtUtil;
+    private final GatewayErrorWriter errorWriter;
 
     // ── Endpoints ─────────────────────────────────────────────────────────────
 
     /** POST /api/v1/orders — create a new order */
     @PostMapping
-    public ResponseEntity<ApiResponse<Map<String, Object>>> createOrder(
+    public ResponseEntity<?> createOrder(
             @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authHeader,
-            @RequestBody CreateOrderRequestDto request) {
+            @RequestBody CreateOrderRequestDto request,
+            ServerWebExchange exchange) {
 
         log.info("REST: Create Order request");
         AuthContext auth = extractAuth(authHeader);
-        return mapToResponseEntity(orderClient.createOrder(request, auth), HttpStatus.CREATED);
+        return mapToResponseEntity(orderClient.createOrder(request, auth), HttpStatus.CREATED, exchange);
     }
 
     /** GET /api/v1/orders/{orderId} — fetch a single order */
     @GetMapping("/{orderId}")
-    public ResponseEntity<ApiResponse<Map<String, Object>>> getOrder(
+    public ResponseEntity<?> getOrder(
             @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authHeader,
-            @PathVariable String orderId) {
+            @PathVariable String orderId,
+            ServerWebExchange exchange) {
 
         log.info("REST: Get Order request for ID: {}", orderId);
         AuthContext auth = extractAuth(authHeader);
-        return mapToResponseEntity(orderClient.getOrder(orderId, auth), HttpStatus.OK);
+        return mapToResponseEntity(orderClient.getOrder(orderId, auth), HttpStatus.OK, exchange);
     }
 
     /** PATCH /api/v1/orders/{orderId}/status — update order status */
     @PatchMapping("/{orderId}/status")
-    public ResponseEntity<ApiResponse<Map<String, Object>>> updateOrderStatus(
+    public ResponseEntity<?> updateOrderStatus(
             @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authHeader,
             @PathVariable String orderId,
-            @RequestBody UpdateOrderStatusRequestDto request) {
+            @RequestBody UpdateOrderStatusRequestDto request,
+            ServerWebExchange exchange) {
 
         log.info("REST: Update Order Status request for ID: {}", orderId);
         AuthContext auth = extractAuth(authHeader);
-        return mapToResponseEntity(orderClient.updateOrderStatus(orderId, request, auth), HttpStatus.OK);
+        return mapToResponseEntity(orderClient.updateOrderStatus(orderId, request, auth), HttpStatus.OK, exchange);
     }
 
     /** GET /api/v1/orders/{orderId}/delivery-confirmation-code - in-app fallback for customer */
     @GetMapping("/{orderId}/delivery-confirmation-code")
-    public ResponseEntity<ApiResponse<Map<String, Object>>> getDeliveryConfirmationCode(
+    public ResponseEntity<?> getDeliveryConfirmationCode(
             @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authHeader,
-            @PathVariable String orderId) {
+            @PathVariable String orderId,
+            ServerWebExchange exchange) {
 
         log.info("REST: Get Delivery Confirmation Code request for ID: {}", orderId);
         AuthContext auth = extractAuth(authHeader);
-        return mapToResponseEntity(orderClient.getDeliveryConfirmationCode(orderId, auth), HttpStatus.OK);
+        return mapToResponseEntity(orderClient.getDeliveryConfirmationCode(orderId, auth), HttpStatus.OK, exchange);
     }
 
     /** GET /api/v1/orders — list orders with optional filters */
     @GetMapping
-    public ResponseEntity<ApiResponse<Map<String, Object>>> listOrders(
+    public ResponseEntity<?> listOrders(
             @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authHeader,
             @RequestParam(required = false)              String companyId,
             @RequestParam(required = false)              String userId,
@@ -127,7 +135,8 @@ public class OrderController {
             @RequestParam(defaultValue = "10")           int    size,
             @RequestParam(required = false)              String sort,
             @RequestParam(defaultValue = "createdAt")    String sortBy,
-            @RequestParam(defaultValue = "true")         boolean sortDesc) {
+            @RequestParam(defaultValue = "true")         boolean sortDesc,
+            ServerWebExchange exchange) {
 
         log.info("REST: List Orders request");
         AuthContext auth = extractAuth(authHeader);
@@ -147,7 +156,8 @@ public class OrderController {
                 .build();
         return mapToResponseEntity(
                 orderClient.listOrders(filter, auth),
-                HttpStatus.OK);
+                HttpStatus.OK,
+                exchange);
     }
 
     // ── Auth extraction ───────────────────────────────────────────────────────
@@ -183,7 +193,7 @@ public class OrderController {
                     e.getClaims() != null ? e.getClaims().getExpiration() : "unknown");
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "JWT_EXPIRED");
         } catch (Exception e) {
-            log.warn("[OrderController] Failed to extract JWT claims: {}", e.getMessage());
+            log.warn("[OrderController] Failed to extract JWT claims");
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "JWT_INVALID");
         }
     }
@@ -207,8 +217,10 @@ public class OrderController {
      * Converts a gRPC-derived {@link ApiResponse} to HTTP, mapping domain error
      * codes to appropriate HTTP status codes.
      */
-    private <T> ResponseEntity<ApiResponse<T>> mapToResponseEntity(
-            ApiResponse<T> response, HttpStatus successStatus) {
+    private <T> ResponseEntity<?> mapToResponseEntity(
+            ApiResponse<T> response,
+            HttpStatus successStatus,
+            ServerWebExchange exchange) {
 
         if (response.isSuccess()) {
             return ResponseEntity.status(successStatus).body(response);
@@ -233,6 +245,13 @@ public class OrderController {
             };
         }
 
-        return ResponseEntity.status(status).body(response);
+        String code = response.getError() != null && response.getError().getCode() != null
+                ? response.getError().getCode()
+                : "INTERNAL_ERROR";
+        String message = response.getError() != null && response.getError().getMessage() != null
+                ? response.getError().getMessage()
+                : "Request failed";
+        StandardErrorResponse errorBody = errorWriter.body(exchange, status, code, message);
+        return ResponseEntity.status(status).body(errorBody);
     }
 }

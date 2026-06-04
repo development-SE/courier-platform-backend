@@ -83,17 +83,17 @@ public interface CourierLocationRepository extends JpaRepository<CourierLocation
             @Param("isOnline")   boolean isOnline);
 
     /**
-     * Updates only the online/offline flag without touching the coordinates.
+     * Updates only the online/offline flag without touching coordinates.
+     * The courier must send a real location before toggling online.
      */
     @Modifying
     @Query(value = """
-        INSERT INTO courier_locations (courier_id, latitude, longitude, updated_at, is_online)
-        VALUES (:courierId, 0, 0, NOW(), :isOnline)
-        ON CONFLICT (courier_id) DO UPDATE
-            SET is_online  = EXCLUDED.is_online,
-                updated_at = NOW()
+        UPDATE courier_locations
+        SET is_online = :isOnline,
+            updated_at = NOW()
+        WHERE courier_id = :courierId
         """, nativeQuery = true)
-    void upsertOnlineStatus(
+    int updateOnlineStatus(
             @Param("courierId") UUID courierId,
             @Param("isOnline")  boolean isOnline);
 }

@@ -40,6 +40,8 @@ class CapacityAwareAssignmentServiceTest {
     @Mock OrderGrpcClient orderGrpcClient;
     @Mock GatewayPrincipalProvider gatewayPrincipalProvider;
     @Mock CourierProfileClient courierProfileClient;
+    @Mock RouteCleanupService routeCleanupService;
+    @Mock AssignmentMetrics assignmentMetrics;
 
     CapacityAwareAssignmentService service;
 
@@ -58,7 +60,9 @@ class CapacityAwareAssignmentServiceTest {
                 eventPublisher,
                 orderGrpcClient,
                 gatewayPrincipalProvider,
-                courierProfileClient);
+                courierProfileClient,
+                routeCleanupService,
+                assignmentMetrics);
         actorId = UUID.randomUUID();
         orderId = UUID.randomUUID();
         when(gatewayPrincipalProvider.requireCurrentUserId()).thenReturn(actorId);
@@ -67,6 +71,8 @@ class CapacityAwareAssignmentServiceTest {
         lenient().when(orderGrpcClient.getOrder(orderId)).thenReturn(order(ParcelSize.SMALL));
         lenient().when(assignmentRepository.lockUnresolvedManualRequiredByOrderId(orderId))
                 .thenReturn(Optional.empty());
+        lenient().when(assignmentRepository.lockUncleanedAssignmentsByOrderId(orderId))
+                .thenReturn(List.of());
         lenient().when(assignmentRepository.saveAndFlush(any())).thenAnswer(invocation -> {
             CourierAssignment assignment = invocation.getArgument(0);
             assignment.setId(UUID.randomUUID());
@@ -93,6 +99,24 @@ class CapacityAwareAssignmentServiceTest {
                 a.getCourierId().equals(courierId)
                         && a.getDemandUnits() == 1
                         && a.getAssignmentPolicy() == AssignmentPolicy.DIRECT));
+    }
+
+    @Test
+    void should_CreatePendingOffer_When_SelectedCourierIsContractor() {
+        UUID courierId = UUID.randomUUID();
+        givenNearby(courierId, 43.01, 76.91, 150);
+        givenProfile(courierId, "CONTRACTOR", "BIKE", 2);
+        givenNoActiveRoute(courierId);
+        givenCommit(courierId);
+
+        LogisticsDto.AutoAssignResponse response = service.autoAssign(orderId);
+
+        assertThat(response.assignmentStatus()).isEqualTo(AssignmentStatus.PENDING);
+        assertThat(response.courierId()).isEqualTo(courierId);
+        verify(assignmentRepository).saveAndFlush(argThat(a ->
+                a.getCourierId().equals(courierId)
+                        && a.getAssignmentPolicy() == AssignmentPolicy.OFFER
+                        && a.getAssignmentStatus() == AssignmentStatus.PENDING));
     }
 
     @Test
@@ -161,6 +185,49 @@ class CapacityAwareAssignmentServiceTest {
     }
 
     @Test
+    void should_ExcludePreviouslyRejectedOrTimedOutCouriers_When_ReassigningSameOrder() {
+        UUID rejectedCourier = UUID.randomUUID();
+        UUID selectedCourier = UUID.randomUUID();
+        givenNearby(List.of(
+                projection(rejectedCourier, 43.01, 76.91, 100),
+                projection(selectedCourier, 43.02, 76.92, 120)
+        ));
+        when(assignmentRepository.findExcludedCourierIdsByOrderId(orderId)).thenReturn(List.of(rejectedCourier));
+        givenProfile(selectedCourier, "CONTRACTOR", "BIKE", 2);
+        givenNoActiveRoute(selectedCourier);
+        givenCommit(selectedCourier);
+
+        LogisticsDto.AutoAssignResponse response = service.autoAssign(orderId);
+
+        assertThat(response.courierId()).isEqualTo(selectedCourier);
+        verify(assignmentRepository).saveAndFlush(argThat(a -> selectedCourier.equals(a.getCourierId())));
+    }
+
+    @Test
+    void should_DelayAssignment_When_StandardOrderBatchingWindowNotElapsed() {
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "standardBatchingWindowSeconds", 120L);
+        when(orderGrpcClient.getOrder(orderId)).thenReturn(new OrderGrpcClient.OrderSnapshot(
+                orderId,
+                OrderStatus.READY,
+                ServiceType.STANDARD,
+                null,
+                43.00,
+                76.90,
+                43.05,
+                76.95,
+                ParcelSize.SMALL,
+                1,
+                "pickup",
+                OffsetDateTime.now().minusSeconds(30)));
+
+        LogisticsDto.AutoAssignResponse response = service.autoAssign(orderId);
+
+        assertThat(response.assignmentStatus()).isEqualTo(AssignmentStatus.MANUAL_REQUIRED);
+        assertThat(response.failureMessage()).isEqualTo("STANDARD order is waiting for batching window");
+        verify(locationRepository, never()).findNearbyCouriers(anyDouble(), anyDouble(), anyDouble(), anyInt());
+    }
+
+    @Test
     void concurrentUniqueConstraintRaceBecomesDuplicateAssignment() {
         UUID courierId = UUID.randomUUID();
         givenNearby(courierId, 43.01, 76.91, 150);
@@ -206,6 +273,35 @@ class CapacityAwareAssignmentServiceTest {
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.manualAssign(
                         new LogisticsDto.ManualAssignmentRequest(orderId, courierId, "dispatcher choice")))
                 .hasMessageContaining("not eligible");
+    }
+
+    @Test
+    void manualAssignmentCleansTerminalRouteImpactBeforeCreatingReplacement() {
+        UUID courierId = UUID.randomUUID();
+        CourierAssignment oldRejected = CourierAssignment.builder()
+                .id(UUID.randomUUID())
+                .orderId(orderId)
+                .courierId(UUID.randomUUID())
+                .routeId(UUID.randomUUID())
+                .demandUnits(1)
+                .assignmentStatus(AssignmentStatus.REJECTED)
+                .assignedAt(OffsetDateTime.now())
+                .build();
+        when(assignmentRepository.lockUncleanedAssignmentsByOrderId(orderId)).thenReturn(List.of(oldRejected));
+        when(locationRepository.findById(courierId)).thenReturn(Optional.of(CourierLocation.builder()
+                .courierId(courierId)
+                .latitude(43.01)
+                .longitude(76.91)
+                .isOnline(true)
+                .updatedAt(OffsetDateTime.now())
+                .build()));
+        givenProfile(courierId, "EMPLOYEE", "BIKE", 2);
+        givenNoActiveRoute(courierId);
+        givenCommit(courierId);
+
+        service.manualAssign(new LogisticsDto.ManualAssignmentRequest(orderId, courierId, "dispatcher choice"));
+
+        verify(routeCleanupService).cleanupAssignment(oldRejected, "dispatcher choice", false);
     }
 
     private OrderGrpcClient.OrderSnapshot order(ParcelSize parcelSize) {

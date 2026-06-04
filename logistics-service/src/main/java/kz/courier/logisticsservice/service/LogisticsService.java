@@ -5,9 +5,6 @@ import kz.courier.logisticsservice.dto.NearbycourierProjection;
 import kz.courier.logisticsservice.entity.AssignmentHistory;
 import kz.courier.logisticsservice.entity.AssignmentStatus;
 import kz.courier.logisticsservice.entity.CourierAssignment;
-import kz.courier.logisticsservice.entity.CourierRoute;
-import kz.courier.logisticsservice.entity.RouteStatus;
-import kz.courier.logisticsservice.entity.RouteStopStatus;
 import kz.courier.logisticsservice.exception.AssignmentNotFoundException;
 import kz.courier.logisticsservice.exception.BusinessException;
 import kz.courier.logisticsservice.exception.LocationNotFoundException;
@@ -17,8 +14,6 @@ import kz.courier.logisticsservice.mapper.AssignmentMapper;
 import kz.courier.logisticsservice.repository.AssignmentHistoryRepository;
 import kz.courier.logisticsservice.repository.AssignmentRepository;
 import kz.courier.logisticsservice.repository.CourierLocationRepository;
-import kz.courier.logisticsservice.repository.CourierRouteRepository;
-import kz.courier.logisticsservice.repository.RouteStopRepository;
 import kz.courier.logisticsservice.security.GatewayPrincipalProvider;
 import kz.courier.logisticsservice.security.SystemPrincipalRunner;
 import kz.courier.order.v1.OrderStatus;
@@ -29,6 +24,8 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.OffsetDateTime;
 import java.time.temporal.ChronoUnit;
@@ -63,8 +60,6 @@ public class LogisticsService {
     private final AssignmentRepository assignmentRepository;
     private final AssignmentHistoryRepository historyRepository;
     private final CourierLocationRepository locationRepository;
-    private final CourierRouteRepository routeRepository;
-    private final RouteStopRepository routeStopRepository;
     private final AssignmentMapper mapper;
     private final AssignmentEventPublisher eventPublisher;
     private final OrderGrpcClient orderGrpcClient;
@@ -72,6 +67,8 @@ public class LogisticsService {
     private final SystemPrincipalRunner systemPrincipalRunner;
     private final CapacityAwareAssignmentService capacityAwareAssignmentService;
     private final AssignmentRetryScheduler assignmentRetryScheduler;
+    private final RouteCleanupService routeCleanupService;
+    private final AssignmentMetrics assignmentMetrics;
 
     // =========================================================================
     //  Assignment - Create
@@ -79,15 +76,12 @@ public class LogisticsService {
 
     @Transactional
     public LogisticsDto.AssignmentResponse createAssignment(LogisticsDto.CreateAssignmentRequest req) {
-        requireAdmin("create assignments");
-        log.info("Creating assignment order={} courier={}", req.orderId(), req.courierId());
-
-        return mapper.toResponse(createAssignmentInternal(
+        log.info("Legacy POST /assignments requested order={} courier={}; delegating to capacity-aware manual assignment",
+                req.orderId(), req.courierId());
+        return manualAssign(new LogisticsDto.ManualAssignmentRequest(
                 req.orderId(),
                 req.courierId(),
-                req.assignedBy(),
-                req.etaMinutes(),
-                "manual-create"));
+                "legacy-post-assignments"));
     }
 
     // =========================================================================
@@ -223,13 +217,15 @@ public class LogisticsService {
         }
 
         assignment.setAssignmentStatus(req.newStatus());
+        applyTerminalReason(assignment, req.newStatus(), req.reason());
         applyTimestamps(assignment, req.newStatus());
         assignment = assignmentRepository.save(assignment);
         handleTerminalOutcome(assignment, req.newStatus(), req.reason());
 
         UUID changedBy = gatewayPrincipalProvider.requireCurrentUserId();
         recordHistory(id, oldStatus, req.newStatus(), changedBy, req.reason());
-        log.info("Assignment {} transitioned {} -> {}", id, oldStatus, req.newStatus());
+        log.info("[AssignmentLifecycle] assignment status changed assignmentId={} orderId={} courierId={} statusFrom={} statusTo={} reason={}",
+                id, assignment.getOrderId(), assignment.getCourierId(), oldStatus, req.newStatus(), req.reason());
 
         eventPublisher.publishStatusChanged(
                 id, assignment.getOrderId(), assignment.getCourierId(),
@@ -410,7 +406,11 @@ public class LogisticsService {
 
         requireSelfOrAdmin(courierId, "change courier online status");
 
-        locationRepository.upsertOnlineStatus(courierId, req.isOnline());
+        int updatedRows = locationRepository.updateOnlineStatus(courierId, req.isOnline());
+        if (updatedRows == 0) {
+            throw new BusinessException("LOCATION_REQUIRED",
+                    "Courier must send a real location before changing online status");
+        }
         log.info("Courier {} is now {}", courierId, req.isOnline() ? "ONLINE" : "OFFLINE");
         retryManualRequiredAssignmentsWhenOnline(req.isOnline(), "courier-online-status");
 
@@ -716,6 +716,7 @@ public class LogisticsService {
                 if (assignment.getDeliveredAt() == null) {
                     assignment.setDeliveredAt(now);
                 }
+                assignment.setActualDurationMinutes(calculateActualDurationMinutes(assignment, now));
             }
             case CANCELLED -> {
                 if (assignment.getCancelledAt() == null) {
@@ -733,111 +734,108 @@ public class LogisticsService {
      * Extend with a dedicated FSM validator when the process becomes richer.
      */
     private void validateTransition(AssignmentStatus from, AssignmentStatus to) {
-        boolean valid = switch (from) {
-            case PENDING -> to == AssignmentStatus.ASSIGNED || to == AssignmentStatus.ACCEPTED
-                    || to == AssignmentStatus.REJECTED || to == AssignmentStatus.TIMED_OUT
-                    || to == AssignmentStatus.CANCELLED;
-            case ASSIGNED -> to == AssignmentStatus.ACCEPTED || to == AssignmentStatus.REJECTED
-                    || to == AssignmentStatus.CANCELLED;
-            case ACCEPTED -> to == AssignmentStatus.PICKED_UP || to == AssignmentStatus.CANCELLED;
-            case PICKED_UP -> to == AssignmentStatus.IN_TRANSIT;
-            case IN_TRANSIT -> to == AssignmentStatus.ARRIVED || to == AssignmentStatus.FAILED;
-            case ARRIVED -> to == AssignmentStatus.DELIVERED || to == AssignmentStatus.FAILED;
-            case MANUAL_REQUIRED -> false;
-            default -> false;
-        };
-
-        if (!valid) {
+        if (!from.canTransitionTo(to)) {
             throw new BusinessException("INVALID_TRANSITION",
                     "Transition " + from + " -> " + to + " is not allowed");
         }
     }
 
-    private void releaseRouteCapacityIfFinished(CourierAssignment assignment, AssignmentStatus newStatus) {
-        if (assignment.getRouteId() == null || assignment.getDemandUnits() == null) {
+    private void applyTerminalReason(CourierAssignment assignment, AssignmentStatus newStatus, String reason) {
+        if (reason == null || reason.isBlank()) {
             return;
         }
-        boolean releasesCapacity = newStatus == AssignmentStatus.REJECTED
-                || newStatus == AssignmentStatus.TIMED_OUT
-                || newStatus == AssignmentStatus.DELIVERED
-                || newStatus == AssignmentStatus.CANCELLED
-                || newStatus == AssignmentStatus.FAILED;
-        if (!releasesCapacity) {
-            return;
+        if (newStatus == AssignmentStatus.REJECTED) {
+            assignment.setRejectionReason(reason);
         }
+        if (newStatus == AssignmentStatus.CANCELLED || newStatus == AssignmentStatus.FAILED) {
+            assignment.setCancellationReason(reason);
+        }
+    }
 
-        routeRepository.lockActiveRouteByCourierId(assignment.getCourierId())
-                .filter(route -> route.getId().equals(assignment.getRouteId()))
-                .ifPresent(route -> {
-                    route.setCurrentLoadUnits(Math.max(0,
-                            route.getCurrentLoadUnits() - assignment.getDemandUnits()));
-                    route.setActiveOrdersCount(Math.max(0,
-                            route.getActiveOrdersCount() - 1));
-                    routeRepository.save(route);
-                });
+    private Integer calculateActualDurationMinutes(CourierAssignment assignment, OffsetDateTime completedAt) {
+        OffsetDateTime startedAt = assignment.getAcceptedAt() != null
+                ? assignment.getAcceptedAt()
+                : assignment.getAssignedAt();
+        if (startedAt == null) {
+            return null;
+        }
+        return (int) Math.max(0, ChronoUnit.MINUTES.between(startedAt, completedAt));
     }
 
     private void handleTerminalOutcome(CourierAssignment assignment, AssignmentStatus newStatus, String reason) {
-        releaseRouteCapacityIfFinished(assignment, newStatus);
-        cancelOutstandingRouteStops(assignment);
-        completeRouteIfNoActiveStops(assignment.getRouteId());
-
         boolean reassignRequired = newStatus == AssignmentStatus.REJECTED
                 || newStatus == AssignmentStatus.TIMED_OUT
                 || newStatus == AssignmentStatus.CANCELLED
                 || newStatus == AssignmentStatus.FAILED;
-        if (!reassignRequired) {
+        RouteCleanupService.CleanupResult cleanup =
+                routeCleanupService.cleanupAssignment(assignment, reason, reassignRequired);
+        if (newStatus == AssignmentStatus.REJECTED) {
+            assignmentMetrics.recordRejected(reason);
+            log.info("[AssignmentLifecycle] offer rejected assignmentId={} orderId={} courierId={} reason={}",
+                    assignment.getId(), assignment.getOrderId(), assignment.getCourierId(), reason);
+        }
+        if (newStatus == AssignmentStatus.TIMED_OUT) {
+            assignmentMetrics.recordTimedOut(reason);
+            log.info("[AssignmentLifecycle] offer timed out assignmentId={} orderId={} courierId={} reason={}",
+                    assignment.getId(), assignment.getOrderId(), assignment.getCourierId(), reason);
+        }
+        if (newStatus == AssignmentStatus.FAILED) {
+            assignmentMetrics.recordFailure("unknown", reason);
+            log.info("[AssignmentLifecycle] assignment failed assignmentId={} orderId={} courierId={} reason={}",
+                    assignment.getId(), assignment.getOrderId(), assignment.getCourierId(), reason);
+        }
+
+        if (cleanup.reassignmentRequested()) {
+            log.info("[AssignmentLifecycle] reassignment triggered orderId={} assignmentId={} reason={}",
+                    assignment.getOrderId(), assignment.getId(), reason);
+            scheduleReassignmentAfterCommit(assignment.getOrderId(), newStatus, reason);
+        }
+    }
+
+    private void scheduleReassignmentAfterCommit(UUID orderId, AssignmentStatus oldStatus, String reason) {
+        if (!TransactionSynchronizationManager.isActualTransactionActive()) {
+            performReassignment(orderId, oldStatus, reason);
+            return;
+        }
+
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                performReassignment(orderId, oldStatus, reason);
+            }
+        });
+    }
+
+    private void performReassignment(UUID orderId, AssignmentStatus oldStatus, String reason) {
+        try {
+            OrderGrpcClient.OrderSnapshot order = systemPrincipalRunner.run(() -> orderGrpcClient.getOrder(orderId));
+            if (order.status() == OrderStatus.CANCELLED || order.status() == OrderStatus.DELIVERED) {
+                log.info("Skipping reassignment for terminal order orderId={} status={}", orderId, order.status());
+                return;
+            }
+        } catch (Exception ex) {
+            log.warn("Reassignment eligibility check failed orderId={} oldStatus={} reason={} error={}",
+                    orderId, oldStatus, reason, ex.getMessage());
             return;
         }
 
         try {
             systemPrincipalRunner.run(() -> {
-                orderGrpcClient.markAssignmentPending(assignment.getOrderId());
+                orderGrpcClient.markAssignmentPending(orderId);
                 return null;
             });
         } catch (Exception ex) {
-            log.warn("Failed to set order={} to ASSIGNMENT_PENDING: {}",
-                    assignment.getOrderId(), ex.getMessage());
+            log.warn("Failed to set ASSIGNMENT_PENDING orderId={} oldStatus={} reason={} error={}",
+                    orderId, oldStatus, reason, ex.getMessage());
+            return;
         }
 
         try {
-            systemPrincipalRunner.run(() -> capacityAwareAssignmentService.autoAssign(assignment.getOrderId()));
+            systemPrincipalRunner.run(() -> capacityAwareAssignmentService.autoAssign(orderId));
         } catch (Exception ex) {
             log.warn("Reassignment failed orderId={} oldStatus={} reason={} error={}",
-                    assignment.getOrderId(), newStatus, reason, ex.getMessage());
+                    orderId, oldStatus, reason, ex.getMessage());
         }
-    }
-
-    private void cancelOutstandingRouteStops(CourierAssignment assignment) {
-        if (assignment.getRouteId() == null) {
-            return;
-        }
-        var stops = routeStopRepository.findAllByRouteIdOrderBySequenceNumberAsc(assignment.getRouteId());
-        var changed = stops.stream()
-                .filter(stop -> assignment.getOrderId().equals(stop.getOrderId()))
-                .filter(stop -> stop.getStatus() != RouteStopStatus.COMPLETED
-                        && stop.getStatus() != RouteStopStatus.CANCELLED)
-                .peek(stop -> stop.setStatus(RouteStopStatus.CANCELLED))
-                .toList();
-        if (!changed.isEmpty()) {
-            routeStopRepository.saveAll(changed);
-        }
-    }
-
-    private void completeRouteIfNoActiveStops(UUID routeId) {
-        if (routeId == null) {
-            return;
-        }
-        routeRepository.findById(routeId).ifPresent(route -> {
-            var stops = routeStopRepository.findAllByRouteIdOrderBySequenceNumberAsc(routeId);
-            boolean hasActiveStops = stops.stream()
-                    .anyMatch(stop -> stop.getStatus() != RouteStopStatus.COMPLETED
-                            && stop.getStatus() != RouteStopStatus.CANCELLED);
-            if (!hasActiveStops && route.getStatus() == RouteStatus.ACTIVE) {
-                route.setStatus(RouteStatus.COMPLETED);
-                routeRepository.save(route);
-            }
-        });
     }
 
     private record CourierCandidateScore(

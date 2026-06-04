@@ -36,7 +36,7 @@ spring:
       group-id: auth-service
       auto-offset-reset: earliest
   main:
-    web-application-type: none
+    web-application-type: servlet
 
 notification-kafka-topic: ${NOTIFICATION_KAFKA_TOPIC:notification-kafka-topic}
 
@@ -48,6 +48,10 @@ jwt:
   secret: ${JWT_SECRET:my-super-secret-key-at-least-32chars!!}
   access-expiry-min: 1440 #later will be15
   refresh-expiry-min: 10080   # 7 days
+
+auth:
+  refresh-token:
+    pepper: ${AUTH_REFRESH_TOKEN_PEPPER:refresh-token-pepper-change-me}
 
 #notification:
 #  grpc:
@@ -77,10 +81,13 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,metrics,prometheus
   endpoint:
     health:
       show-details: always
+  metrics:
+    tags:
+      application: ${spring.application.name}
 
 # Logging
 logging:

@@ -58,7 +58,7 @@ public class JwtUtil {
         try {
             return extractExpiration(token).before(new Date());
         } catch (Exception e) {
-            log.error("Error checking token expiration: {}", e.getMessage());
+            log.warn("Unable to check JWT expiration");
             return true;
         }
     }
@@ -71,7 +71,7 @@ public class JwtUtil {
             log.warn("Token expired at {}", e.getClaims() != null ? e.getClaims().getExpiration() : "unknown");
             return false;
         } catch (Exception e) {
-            log.error("Token validation failed: {}", e.getMessage());
+            log.warn("Token validation failed");
             return false;
         }
     }

@@ -1,144 +1,212 @@
 {
-    "version": "2.0.0",
-    "tasks": [
-        {
-            "label": "Run: eureka-server",
-            "command": ".\\mvnw.cmd",
-            "type": "shell",
-            "args": [
-                "spring-boot:run"
-            ],
-            "presentation": {
-                "label": "eureka-server",
-                "reveal": "always",
-                "panel": "new",
-                "close": false,
-                "showReuseMessage": false
-            },
-            "options": {
-                "cwd": "${workspaceFolder}\\eureka-server"
-            }
-        },
-        {
-            "label": "Run: auth-service",
-            "command": ".\\mvnw.cmd",
-            "type": "shell",
-            "args": [
-                "spring-boot:run"
-            ],
-            "presentation": {
-                "label": "auth-service",
-                "reveal": "always",
-                "panel": "new",
-                "close": false,
-                "showReuseMessage": false
-            },
-            "options": {
-                "cwd": "${workspaceFolder}\\auth-service"
-            }
-        },
-        {
-            "label": "Run: api-gateway",
-            "command": ".\\mvnw.cmd",
-            "type": "shell",
-            "args": [
-                "spring-boot:run"
-            ],
-            "presentation": {
-                "label": "api-gateway",
-                "reveal": "always",
-                "panel": "new",
-                "close": false,
-                "showReuseMessage": false
-            },
-            "options": {
-                "cwd": "${workspaceFolder}\\api-gateway"
-            }
-        },
-        {
-            "label": "Run: user-service",
-            "command": ".\\mvnw.cmd",
-            "type": "shell",
-            "args": [
-                "spring-boot:run"
-            ],
-            "presentation": {
-                "label": "user-service",
-                "reveal": "always",
-                "panel": "new",
-                "close": false,
-                "showReuseMessage": false
-            },
-            "options": {
-                "cwd": "${workspaceFolder}\\user-service"
-            }
-        },
-        {
-            "label": "Run: order-service",
-            "command": ".\\mvnw.cmd",
-            "type": "shell",
-            "args": [
-                "spring-boot:run"
-            ],
-            "presentation": {
-                "label": "order-service",
-                "reveal": "always",
-                "panel": "new",
-                "close": false,
-                "showReuseMessage": false
-            },
-            "options": {
-                "cwd": "${workspaceFolder}\\order-service"
-            }
-        },
-        {
-            "label": "Run: companyservice",
-            "command": ".\\mvnw.cmd",
-            "type": "shell",
-            "args": [
-                "spring-boot:run"
-            ],
-            "presentation": {
-                "label": "companyservice",
-                "reveal": "always",
-                "panel": "new",
-                "close": false,
-                "showReuseMessage": false
-            },
-            "options": {
-                "cwd": "${workspaceFolder}\\companyservice"
-            }
-        },
-        {
-            "label": "Run: notification",
-            "command": ".\\mvnw.cmd",
-            "type": "shell",
-            "args": [
-                "spring-boot:run"
-            ],
-            "presentation": {
-                "label": "notification",
-                "reveal": "always",
-                "panel": "new",
-                "close": false,
-                "showReuseMessage": false
-            },
-            "options": {
-                "cwd": "${workspaceFolder}\\notification"
-            }
-        },
-        {
-            "label": "Start All Services",
-            "dependsOn": [
-                "Run: eureka-server",
-                "Run: auth-service",
-                "Run: api-gateway",
-                "Run: user-service",
-                "Run: order-service",
-                "Run: companyservice",
-                "Run: notification"
-            ],
-            "dependsOrder": "parallel"
-        }
-    ]
+    "version":  "2.0.0",
+    "tasks":  [
+                  {
+                      "label":  "Run: eureka-server",
+                      "problemMatcher":  [
+
+                                         ],
+                      "command":  ".\\\\mvnw.cmd",
+                      "type":  "shell",
+                      "args":  [
+                                   "spring-boot:run"
+                               ],
+                      "presentation":  {
+                                           "label":  "eureka-server",
+                                           "reveal":  "always",
+                                           "panel":  "new",
+                                           "close":  false,
+                                           "showReuseMessage":  false
+                                       },
+                      "options":  {
+                                      "cwd":  "C:\\Users\\LENOVO\\Desktop\\JavaThings\\courier-platform-backend_main\\eureka-server"
+                                  }
+                  },
+                  {
+                      "label":  "Run: auth-service",
+                      "problemMatcher":  [
+
+                                         ],
+                      "command":  ".\\\\mvnw.cmd",
+                      "type":  "shell",
+                      "args":  [
+                                   "spring-boot:run"
+                               ],
+                      "presentation":  {
+                                           "label":  "auth-service",
+                                           "reveal":  "always",
+                                           "panel":  "new",
+                                           "close":  false,
+                                           "showReuseMessage":  false
+                                       },
+                      "options":  {
+                                      "cwd":  "C:\\Users\\LENOVO\\Desktop\\JavaThings\\courier-platform-backend_main\\auth-service"
+                                  }
+                  },
+                  {
+                      "label":  "Run: api-gateway",
+                      "problemMatcher":  [
+
+                                         ],
+                      "command":  ".\\\\mvnw.cmd",
+                      "type":  "shell",
+                      "args":  [
+                                   "spring-boot:run"
+                               ],
+                      "presentation":  {
+                                           "label":  "api-gateway",
+                                           "reveal":  "always",
+                                           "panel":  "new",
+                                           "close":  false,
+                                           "showReuseMessage":  false
+                                       },
+                      "options":  {
+                                      "cwd":  "C:\\Users\\LENOVO\\Desktop\\JavaThings\\courier-platform-backend_main\\api-gateway"
+                                  }
+                  },
+                  {
+                      "label":  "Run: user-service",
+                      "problemMatcher":  [
+
+                                         ],
+                      "command":  ".\\\\mvnw.cmd",
+                      "type":  "shell",
+                      "args":  [
+                                   "spring-boot:run"
+                               ],
+                      "presentation":  {
+                                           "label":  "user-service",
+                                           "reveal":  "always",
+                                           "panel":  "new",
+                                           "close":  false,
+                                           "showReuseMessage":  false
+                                       },
+                      "options":  {
+                                      "cwd":  "C:\\Users\\LENOVO\\Desktop\\JavaThings\\courier-platform-backend_main\\user-service"
+                                  }
+                  },
+                  {
+                      "label":  "Run: order-service",
+                      "problemMatcher":  [
+
+                                         ],
+                      "command":  ".\\\\mvnw.cmd",
+                      "type":  "shell",
+                      "args":  [
+                                   "spring-boot:run"
+                               ],
+                      "presentation":  {
+                                           "label":  "order-service",
+                                           "reveal":  "always",
+                                           "panel":  "new",
+                                           "close":  false,
+                                           "showReuseMessage":  false
+                                       },
+                      "options":  {
+                                      "cwd":  "C:\\Users\\LENOVO\\Desktop\\JavaThings\\courier-platform-backend_main\\order-service"
+                                  }
+                  },
+                  {
+                      "label":  "Run: companyservice",
+                      "problemMatcher":  [
+
+                                         ],
+                      "command":  ".\\\\mvnw.cmd",
+                      "type":  "shell",
+                      "args":  [
+                                   "spring-boot:run"
+                               ],
+                      "presentation":  {
+                                           "label":  "companyservice",
+                                           "reveal":  "always",
+                                           "panel":  "new",
+                                           "close":  false,
+                                           "showReuseMessage":  false
+                                       },
+                      "options":  {
+                                      "cwd":  "C:\\Users\\LENOVO\\Desktop\\JavaThings\\courier-platform-backend_main\\companyservice"
+                                  }
+                  },
+                  {
+                      "label":  "Run: notification",
+                      "problemMatcher":  [
+
+                                         ],
+                      "command":  ".\\\\mvnw.cmd",
+                      "type":  "shell",
+                      "args":  [
+                                   "spring-boot:run"
+                               ],
+                      "presentation":  {
+                                           "label":  "notification",
+                                           "reveal":  "always",
+                                           "panel":  "new",
+                                           "close":  false,
+                                           "showReuseMessage":  false
+                                       },
+                      "options":  {
+                                      "cwd":  "C:\\Users\\LENOVO\\Desktop\\JavaThings\\courier-platform-backend_main\\notification"
+                                  }
+                  },
+                  {
+                      "label":  "Run: courierservice",
+                      "problemMatcher":  [
+
+                                         ],
+                      "command":  ".\\\\mvnw.cmd",
+                      "type":  "shell",
+                      "args":  [
+                                   "spring-boot:run"
+                               ],
+                      "presentation":  {
+                                           "label":  "courierservice",
+                                           "reveal":  "always",
+                                           "panel":  "new",
+                                           "close":  false,
+                                           "showReuseMessage":  false
+                                       },
+                      "options":  {
+                                      "cwd":  "C:\\Users\\LENOVO\\Desktop\\JavaThings\\courier-platform-backend_main\\courierservice"
+                                  }
+                  },
+                  {
+                      "label":  "Run: logistics-service",
+                      "problemMatcher":  [
+
+                                         ],
+                      "command":  ".\\\\mvnw.cmd",
+                      "type":  "shell",
+                      "args":  [
+                                   "spring-boot:run"
+                               ],
+                      "presentation":  {
+                                           "label":  "logistics-service",
+                                           "reveal":  "always",
+                                           "panel":  "new",
+                                           "close":  false,
+                                           "showReuseMessage":  false
+                                       },
+                      "options":  {
+                                      "cwd":  "C:\\Users\\LENOVO\\Desktop\\JavaThings\\courier-platform-backend_main\\logistics-service"
+                                  }
+                  },
+                  {
+                      "label":  "Start All Services",
+                      "problemMatcher":  [
+
+                                         ],
+                      "dependsOn":  [
+                                        "Run: eureka-server",
+                                        "Run: auth-service",
+                                        "Run: api-gateway",
+                                        "Run: user-service",
+                                        "Run: order-service",
+                                        "Run: companyservice",
+                                        "Run: notification",
+                                        "Run: courierservice",
+                                        "Run: logistics-service"
+                                    ],
+                      "dependsOrder":  "parallel"
+                  }
+              ]
 }

@@ -59,7 +59,7 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
     private static final Set<String> PRIVILEGED_ROLES =
             Set.of("ADMIN", "SUPER_ADMIN");
     private static final Set<String> COMPANY_SCOPED_ROLES =
-            Set.of("PARTNER", "DIRECTOR", "COMPANY_ADMIN", "MANAGER");
+            Set.of("PARTNER", "DIRECTOR", "MANAGER");
     private static final int DEFAULT_PAGE_SIZE = 20;
     private static final int MAX_PAGE_SIZE = 100;
 
@@ -131,9 +131,11 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
                     .build();
 
             order = orderRepository.save(order);
-            log.info("[gRPC] Order created id={}", order.getId());
+            log.info("[OrderLifecycle] order created orderId={} authorId={} companyId={} status={} serviceType={}",
+                    order.getId(), order.getAuthorId(), order.getCompanyId(), order.getStatus(), order.getServiceType());
             orderEventPublisher.publishCreatedAfterCommit(order);
             if (order.getStatus() == kz.courier.orderservice.model.OrderStatus.READY) {
+                log.info("[OrderLifecycle] order moved to READY orderId={} reason=custom-order", order.getId());
                 orderEventPublisher.publishReadyAfterCommit(order);
             }
 
@@ -271,10 +273,17 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
                 return;
             }
 
+            kz.courier.orderservice.model.OrderStatus oldStatus = order.getStatus();
             order.setStatus(newStatus);
             orderRepository.save(order);
+            log.info("[OrderLifecycle] order status changed orderId={} statusFrom={} statusTo={} actorId={}",
+                    order.getId(), oldStatus, newStatus, caller.userId());
+            if (newStatus == kz.courier.orderservice.model.OrderStatus.CANCELLED) {
+                log.info("[OrderLifecycle] order cancelled orderId={} actorId={}", order.getId(), caller.userId());
+            }
             orderEventPublisher.publishStatusChangedAfterCommit(order);
             if (newStatus == kz.courier.orderservice.model.OrderStatus.READY) {
+                log.info("[OrderLifecycle] order moved to READY orderId={} reason=status-update", order.getId());
                 orderEventPublisher.publishReadyAfterCommit(order);
             }
 
@@ -790,13 +799,53 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
         }
 
         UUID callerId = parseUuid(caller.userId(), "caller userId");
-        if (!callerId.equals(order.getAuthorId())) {
-            throw new OrderServiceException("FORBIDDEN", "You do not have access to modify this order");
+        if (isCompanyScoped(caller)) {
+            authorizeCompanyStatusChange(caller, order, newStatus);
+            return;
         }
+
         if (newStatus != kz.courier.orderservice.model.OrderStatus.CANCELLED) {
             throw new OrderServiceException("FORBIDDEN",
                     "Regular users may only cancel their own orders");
         }
+        if (!callerId.equals(order.getAuthorId())) {
+            throw new OrderServiceException("FORBIDDEN", "You do not have access to modify this order");
+        }
+    }
+
+    private void authorizeCompanyStatusChange(AuthenticatedUser caller,
+                                              Order order,
+                                              kz.courier.orderservice.model.OrderStatus newStatus) {
+        if (order.getCompanyId() == null) {
+            throw new OrderServiceException("FORBIDDEN",
+                    "Company users can only prepare company orders");
+        }
+
+        UUID callerCompanyId = parseOptionalUuid(caller.companyId(), "caller companyId");
+        if (callerCompanyId == null || !callerCompanyId.equals(order.getCompanyId())) {
+            throw new OrderServiceException("FORBIDDEN",
+                    "Company users can only modify orders for their own company");
+        }
+
+        if (!isCompanyPreparationTransition(order.getStatus(), newStatus)) {
+            throw new OrderServiceException("INVALID_TRANSITION",
+                    "Company order transition " + order.getStatus() + " -> " + newStatus + " is not allowed");
+        }
+    }
+
+    private boolean isCompanyPreparationTransition(kz.courier.orderservice.model.OrderStatus current,
+                                                   kz.courier.orderservice.model.OrderStatus next) {
+        return switch (current) {
+            case NEW -> next == kz.courier.orderservice.model.OrderStatus.ACCEPTED
+                    || next == kz.courier.orderservice.model.OrderStatus.REJECTED
+                    || next == kz.courier.orderservice.model.OrderStatus.CANCELLED;
+            case ACCEPTED -> next == kz.courier.orderservice.model.OrderStatus.PREPARING
+                    || next == kz.courier.orderservice.model.OrderStatus.CANCELLED
+                    || next == kz.courier.orderservice.model.OrderStatus.READY;
+            case PREPARING -> next == kz.courier.orderservice.model.OrderStatus.READY
+                    || next == kz.courier.orderservice.model.OrderStatus.CANCELLED;
+            default -> false;
+        };
     }
 
     private boolean isPrivileged(AuthenticatedUser caller) {

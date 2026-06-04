@@ -3,15 +3,20 @@ package kz.courier.apigateway.controller;
 import io.jsonwebtoken.Claims;
 import kz.courier.apigateway.dto.request.order.OrderListFilterDto;
 import kz.courier.apigateway.dto.response.ApiResponse;
+import kz.courier.apigateway.error.GatewayErrorWriter;
 import kz.courier.apigateway.grpc.AuthContext;
 import kz.courier.apigateway.grpc.OrderClient;
 import kz.courier.apigateway.security.JwtUtil;
+import kz.courier.common.error.StandardErrorResponse;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
+import org.springframework.mock.http.server.reactive.MockServerHttpRequest;
+import org.springframework.mock.web.server.MockServerWebExchange;
 
 import java.time.OffsetDateTime;
 import java.util.Map;
@@ -49,7 +54,7 @@ class OrderControllerTest {
         when(orderClient.listOrders(any(OrderListFilterDto.class), any(AuthContext.class)))
                 .thenReturn(ApiResponse.success(Map.of("orders", java.util.List.of())));
 
-        OrderController controller = new OrderController(orderClient, jwtUtil);
+        OrderController controller = new OrderController(orderClient, jwtUtil, new GatewayErrorWriter(objectMapper()));
         var response = controller.listOrders(
                 "Bearer " + token,
                 companyId,
@@ -64,7 +69,8 @@ class OrderControllerTest {
                 25,
                 "totalAmount,desc",
                 "createdAt",
-                true);
+                true,
+                MockServerWebExchange.from(MockServerHttpRequest.get("/api/v1/orders").build()));
 
         ArgumentCaptor<OrderListFilterDto> filterCaptor = ArgumentCaptor.forClass(OrderListFilterDto.class);
         ArgumentCaptor<AuthContext> authCaptor = ArgumentCaptor.forClass(AuthContext.class);
@@ -81,5 +87,39 @@ class OrderControllerTest {
         assertEquals("totalAmount", filterCaptor.getValue().getSortBy());
         assertEquals(true, filterCaptor.getValue().isSortDesc());
         assertEquals(companyId, authCaptor.getValue().companyId());
+    }
+
+    @Test
+    void getOrderMapsGrpcNotFoundToStandardRestError() {
+        String token = "token";
+        String userId = UUID.randomUUID().toString();
+        String orderId = UUID.randomUUID().toString();
+        MockServerWebExchange exchange = MockServerWebExchange.from(
+                MockServerHttpRequest.get("/api/v1/orders/" + orderId)
+                        .header("X-Correlation-Id", "trace-test")
+                        .build());
+        exchange.getAttributes().put("correlationId", "trace-test");
+
+        when(jwtUtil.extractAllClaims(token)).thenReturn(claims);
+        when(claims.getSubject()).thenReturn(userId);
+        when(claims.get("role", String.class)).thenReturn("ADMIN");
+        when(claims.get("companyId", String.class)).thenReturn(null);
+        when(orderClient.getOrder(any(String.class), any(AuthContext.class)))
+                .thenReturn(ApiResponse.error("ORDER_NOT_FOUND", "Order not found"));
+
+        OrderController controller = new OrderController(orderClient, jwtUtil, new GatewayErrorWriter(objectMapper()));
+        var response = controller.getOrder("Bearer " + token, orderId, exchange);
+
+        assertEquals(HttpStatus.NOT_FOUND, response.getStatusCode());
+        StandardErrorResponse body = (StandardErrorResponse) response.getBody();
+        assertEquals(404, body.status());
+        assertEquals("NOT_FOUND", body.error());
+        assertEquals("ORDER_NOT_FOUND", body.code());
+        assertEquals("/api/v1/orders/" + orderId, body.path());
+        assertEquals("trace-test", body.traceId());
+    }
+
+    private ObjectMapper objectMapper() {
+        return new ObjectMapper().findAndRegisterModules();
     }
 }

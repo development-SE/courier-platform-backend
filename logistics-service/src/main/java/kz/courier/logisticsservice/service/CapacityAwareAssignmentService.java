@@ -50,6 +50,8 @@ public class CapacityAwareAssignmentService {
     private final OrderGrpcClient orderGrpcClient;
     private final GatewayPrincipalProvider gatewayPrincipalProvider;
     private final CourierProfileClient courierProfileClient;
+    private final RouteCleanupService routeCleanupService;
+    private final AssignmentMetrics assignmentMetrics;
 
     @Value("${assignment.retry.delay-seconds:60}")
     private long retryDelaySeconds;
@@ -62,9 +64,33 @@ public class CapacityAwareAssignmentService {
 
     @Transactional
     public LogisticsDto.AutoAssignResponse autoAssign(UUID orderId) {
+        var timer = assignmentMetrics.startAssignmentTimer();
+        String result = "failed";
+        try {
+            LogisticsDto.AutoAssignResponse response = autoAssignInternal(orderId);
+            result = response.assignmentStatus() == AssignmentStatus.MANUAL_REQUIRED
+                    ? "manual_required"
+                    : "success";
+            return response;
+        } catch (BusinessException ex) {
+            if ("DUPLICATE_ASSIGNMENT".equals(ex.getCode())) {
+                assignmentMetrics.recordDuplicatePrevented(ex.getCode());
+            }
+            assignmentMetrics.recordFailure("unknown", ex.getCode());
+            throw ex;
+        } finally {
+            assignmentMetrics.recordDuration(timer, "unknown", result);
+        }
+    }
+
+    private LogisticsDto.AutoAssignResponse autoAssignInternal(UUID orderId) {
         UUID actorId = gatewayPrincipalProvider.requireCurrentUserId();
+        assignmentMetrics.recordAttempt("unknown", "auto");
+        log.info("[AssignmentLifecycle] assignment started orderId={} mode=auto", orderId);
         assignmentRepository.lockOrderAssignmentMutex(orderId.toString());
         if (!assignmentRepository.lockActiveAssignmentsByOrderId(orderId).isEmpty()) {
+            assignmentMetrics.recordDuplicatePrevented("active-assignment");
+            log.info("[AssignmentLifecycle] duplicate assignment prevented orderId={} reason=active-assignment", orderId);
             throw new BusinessException("DUPLICATE_ASSIGNMENT",
                     "An active assignment already exists for order " + orderId);
         }
@@ -95,6 +121,7 @@ public class CapacityAwareAssignmentService {
         }
 
         List<LogisticsDto.NearbyCourierResponse> nearbyCouriers = findNearby(order);
+        assignmentMetrics.recordCandidatesFound(nearbyCouriers.size());
         Set<UUID> excludedCourierIds = exclusionSetForThisCycle(orderId, nearbyCouriers);
         AssignmentFailureReason noPlanReason = nearbyCouriers.isEmpty()
                 ? AssignmentFailureReason.NO_ONLINE_COURIERS
@@ -109,6 +136,7 @@ public class CapacityAwareAssignmentService {
                     .flatMap(Optional::stream)
                     .sorted(Comparator.comparingDouble(CandidatePlan::score))
                     .toList();
+            assignmentMetrics.recordCandidatesEligible(rankedPlans.size());
         } catch (CourierProfileClient.CourierProfileUnavailableException ex) {
             String message = "Courier profile service is unavailable";
             CourierAssignment failed = persistManualRequired(orderId, demandUnits, nearbyCouriers.size(), 0,
@@ -118,10 +146,14 @@ public class CapacityAwareAssignmentService {
         }
 
         for (CandidatePlan plan : rankedPlans) {
+            log.info("[AssignmentLifecycle] courier candidate selected orderId={} courierId={} assignmentPolicy={} courierType={} serviceType={}",
+                    orderId, plan.courierId(), plan.assignmentPolicy(), courierType(plan.assignmentPolicy()), order.serviceType());
             Optional<CourierAssignment> assignment = tryCommitPlan(plan, order, demandUnits, actorId,
                     "capacity-aware-auto-assign");
             if (assignment.isPresent()) {
                 CourierAssignment saved = assignment.get();
+                assignmentMetrics.recordSuccess(order.serviceType().name(), saved.getAssignmentPolicy().name());
+                logAssignmentCreated(order, saved);
                 resolveManualRequired(orderId, saved.getId());
                 return LogisticsDto.AutoAssignResponse.builder()
                         .assigned(mapper.toResponse(saved))
@@ -161,12 +193,36 @@ public class CapacityAwareAssignmentService {
 
     @Transactional
     public LogisticsDto.AssignmentResponse manualAssign(LogisticsDto.ManualAssignmentRequest request) {
+        var timer = assignmentMetrics.startAssignmentTimer();
+        String result = "failed";
+        try {
+            LogisticsDto.AssignmentResponse response = manualAssignInternal(request);
+            result = "success";
+            return response;
+        } catch (BusinessException ex) {
+            if ("DUPLICATE_ASSIGNMENT".equals(ex.getCode())) {
+                assignmentMetrics.recordDuplicatePrevented(ex.getCode());
+            }
+            assignmentMetrics.recordFailure("unknown", ex.getCode());
+            throw ex;
+        } finally {
+            assignmentMetrics.recordDuration(timer, "unknown", result);
+        }
+    }
+
+    private LogisticsDto.AssignmentResponse manualAssignInternal(LogisticsDto.ManualAssignmentRequest request) {
         UUID actorId = gatewayPrincipalProvider.requireCurrentUserId();
         UUID orderId = request.orderId();
         UUID courierId = request.courierId();
+        assignmentMetrics.recordAttempt("unknown", "manual");
+        log.info("[AssignmentLifecycle] assignment started orderId={} courierId={} mode=manual",
+                orderId, courierId);
         assignmentRepository.lockOrderAssignmentMutex(orderId.toString());
+        cleanupTerminalAssignmentsBeforeManualAssignment(orderId, request.reason());
 
         if (!assignmentRepository.lockActiveAssignmentsByOrderId(orderId).isEmpty()) {
+            assignmentMetrics.recordDuplicatePrevented("active-assignment");
+            log.info("[AssignmentLifecycle] duplicate assignment prevented orderId={} reason=active-assignment", orderId);
             throw new BusinessException("DUPLICATE_ASSIGNMENT",
                     "An active assignment already exists for order " + orderId);
         }
@@ -206,6 +262,8 @@ public class CapacityAwareAssignmentService {
                         : request.reason())
                 .orElseThrow(() -> new BusinessException("COURIER_CAPACITY_CHANGED",
                         "Selected courier became infeasible during assignment"));
+        assignmentMetrics.recordSuccess(order.serviceType().name(), saved.getAssignmentPolicy().name());
+        logAssignmentCreated(order, saved);
         resolveManualRequired(orderId, saved.getId());
         return mapper.toResponse(saved);
     }
@@ -374,6 +432,7 @@ public class CapacityAwareAssignmentService {
 
         locationRepository.lockByCourierId(plan.courierId()).orElse(null);
         if (!assignmentRepository.lockActiveAssignmentsByOrderId(order.orderId()).isEmpty()) {
+            assignmentMetrics.recordDuplicatePrevented("active-assignment");
             throw new BusinessException("DUPLICATE_ASSIGNMENT",
                     "An active assignment already exists for order " + order.orderId());
         }
@@ -434,6 +493,7 @@ public class CapacityAwareAssignmentService {
         try {
             assignment = assignmentRepository.saveAndFlush(assignment);
         } catch (DataIntegrityViolationException ex) {
+            assignmentMetrics.recordDuplicatePrevented("db-constraint");
             log.info("[AssignmentCandidate] concurrent assignment won orderId={} courierId={} constraint={}",
                     order.orderId(), plan.courierId(), mostSpecificMessage(ex));
             throw new BusinessException("DUPLICATE_ASSIGNMENT",
@@ -485,6 +545,10 @@ public class CapacityAwareAssignmentService {
                 : null);
 
         CourierAssignment saved = assignmentRepository.saveAndFlush(assignment);
+        assignmentMetrics.recordManualRequired(reason.name());
+        assignmentMetrics.recordFailure("unknown", reason.name());
+        log.info("[AssignmentLifecycle] manual-required created orderId={} assignmentId={} reason={} scannedCandidates={} eligibleCandidates={}",
+                orderId, saved.getId(), reason, scannedCandidates, eligibleCandidates);
         eventPublisher.publishStatusChanged(saved.getId(), orderId, null, null, AssignmentStatus.MANUAL_REQUIRED);
         return saved;
     }
@@ -496,6 +560,15 @@ public class CapacityAwareAssignmentService {
                     failed.setResolvedAssignmentId(resolvedAssignmentId);
                     assignmentRepository.save(failed);
                 });
+    }
+
+    private void cleanupTerminalAssignmentsBeforeManualAssignment(UUID orderId, String reason) {
+        assignmentRepository.lockUncleanedAssignmentsByOrderId(orderId).stream()
+                .filter(assignment -> !assignment.getAssignmentStatus().isActive())
+                .forEach(assignment -> routeCleanupService.cleanupAssignment(
+                        assignment,
+                        reason == null || reason.isBlank() ? "manual-reassignment" : reason,
+                        false));
     }
 
     private LogisticsDto.AutoAssignResponse failureResponse(UUID orderId,
@@ -648,6 +721,8 @@ public class CapacityAwareAssignmentService {
     }
 
     private void persistStops(UUID routeId, InsertionPlan insertion) {
+        OffsetDateTime now = OffsetDateTime.now();
+        Map<StopPlan, OffsetDateTime> estimatedArrivalTimes = estimateArrivalTimes(insertion, now);
         List<RouteStop> existingMutable = insertion.stops().stream()
                 .map(StopPlan::existingStop)
                 .filter(Objects::nonNull)
@@ -676,9 +751,22 @@ public class CapacityAwareAssignmentService {
                 continue;
             }
             stop.setSequenceNumber(i + 1);
+            stop.setEstimatedArrivalTime(estimatedArrivalTimes.get(plan));
             toSave.add(stop);
         }
         stopRepository.saveAll(toSave);
+    }
+
+    private Map<StopPlan, OffsetDateTime> estimateArrivalTimes(InsertionPlan insertion, OffsetDateTime baseTime) {
+        Map<StopPlan, OffsetDateTime> estimates = new IdentityHashMap<>();
+        Coordinate cursor = insertion.courierLocation();
+        double cumulativeMeters = 0.0;
+        for (StopPlan stop : insertion.stops()) {
+            cumulativeMeters += haversineMeters(cursor, stop.coordinate());
+            estimates.put(stop, baseTime.plusMinutes(estimateEtaMinutes(cumulativeMeters)));
+            cursor = stop.coordinate();
+        }
+        return estimates;
     }
 
     private boolean pickupBeforeDropoff(List<StopPlan> stops, UUID orderId) {
@@ -791,6 +879,22 @@ public class CapacityAwareAssignmentService {
     private String mostSpecificMessage(DataIntegrityViolationException ex) {
         Throwable cause = ex.getMostSpecificCause();
         return cause == null ? ex.getMessage() : cause.getMessage();
+    }
+
+    private void logAssignmentCreated(OrderGrpcClient.OrderSnapshot order, CourierAssignment assignment) {
+        if (assignment.getAssignmentPolicy() == AssignmentPolicy.DIRECT) {
+            log.info("[AssignmentLifecycle] employee direct assignment created orderId={} assignmentId={} courierId={} routeId={} serviceType={}",
+                    assignment.getOrderId(), assignment.getId(), assignment.getCourierId(),
+                    assignment.getRouteId(), order.serviceType());
+            return;
+        }
+        log.info("[AssignmentLifecycle] contractor offer created orderId={} assignmentId={} courierId={} routeId={} serviceType={}",
+                assignment.getOrderId(), assignment.getId(), assignment.getCourierId(),
+                assignment.getRouteId(), order.serviceType());
+    }
+
+    private String courierType(AssignmentPolicy policy) {
+        return policy == AssignmentPolicy.DIRECT ? "employee" : "contractor";
     }
 
     private record Coordinate(double latitude, double longitude) {}

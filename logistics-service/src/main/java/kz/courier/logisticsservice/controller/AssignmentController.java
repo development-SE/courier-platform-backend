@@ -36,8 +36,11 @@ public class AssignmentController {
     // ── Create ────────────────────────────────────────────────────────────────
 
     /**
-     * Creates a new courier assignment for an order.
-     * Returns 409 if an active (non-terminal) assignment already exists for that order.
+     * Legacy manual assignment path.
+     *
+     * <p>Kept for backward compatibility, but internally delegates to the same
+     * capacity-aware validation used by {@code POST /assignments/manual}.
+     * Prefer {@code POST /assignments/manual} for new clients.
      */
     @PostMapping
     public ResponseEntity<LogisticsDto.ApiResponse<LogisticsDto.AssignmentResponse>> create(

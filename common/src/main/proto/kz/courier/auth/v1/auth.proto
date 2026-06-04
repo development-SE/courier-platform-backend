@@ -35,7 +35,7 @@ message RegisterRequest {
 message RegisterResponse {
   kz.courier.common.v1.Response response = 1;
   string user_id = 2;  // UUID of created user
-  string confirmation_token = 3;  // For email verification
+  string confirmation_token = 3 [deprecated = true];  // Not populated; verification link is sent by email
 }
 
 // Super-admin-only staff creation request.
@@ -80,6 +80,16 @@ message RefreshTokenResponse {
   string access_token = 2;
   string refresh_token = 3;  // New refresh token if rotated
   google.protobuf.Timestamp expires_at = 4;
+}
+
+message LogoutRequest {
+  string refresh_token = 1;
+}
+
+message LogoutAllRequest {
+  string actor_user_id = 1;
+  Role actor_role = 2;
+  optional string target_user_id = 3;
 }
 
 // Get user details
@@ -150,6 +160,10 @@ service AuthService {
   rpc Login(LoginRequest) returns (LoginResponse);
   // Refresh JWT token
   rpc RefreshToken(RefreshTokenRequest) returns (RefreshTokenResponse);
+  // Revoke the presented refresh token
+  rpc Logout(LogoutRequest) returns (kz.courier.common.v1.Response);
+  // Revoke all active refresh tokens for the actor or an admin-selected user
+  rpc LogoutAll(LogoutAllRequest) returns (kz.courier.common.v1.Response);
   // Get user profile
   rpc GetUser(GetUserRequest) returns (GetUserResponse);
   // Update user profile

@@ -47,8 +47,6 @@ public class AuthClient {
 
             kz.courier.auth.v1.RegisterResponse grpcResponse = authStub.register(grpcRequest);
 
-            log.info("gRPC Register response: {}", grpcResponse);
-
             if (!grpcResponse.getResponse().getSuccess()) {
                 log.warn("Registration failed: {}", grpcResponse.getResponse().getError().getMessage());
                 return ApiResponse.error(
@@ -59,7 +57,6 @@ public class AuthClient {
 
             RegisterResponse response = RegisterResponse.builder()
                     .userId(grpcResponse.getUserId())
-                    .confirmationToken(grpcResponse.getConfirmationToken())
                     .message("Registration successful. Please check your email to verify your account.")
                     .build();
 
@@ -132,7 +129,6 @@ public class AuthClient {
 
             RegisterResponse response = RegisterResponse.builder()
                     .userId(grpcResponse.getUserId())
-                    .confirmationToken(grpcResponse.getConfirmationToken())
                     .message("Admin user created. Please ask them to verify their email.")
                     .build();
 
@@ -225,6 +221,64 @@ public class AuthClient {
             return ApiResponse.error("GRPC_ERROR", "Service temporarily unavailable: " + e.getStatus().getDescription());
         } catch (Exception e) {
             log.error("Unexpected error during token refresh", e);
+            return ApiResponse.error("INTERNAL_ERROR", "An unexpected error occurred");
+        }
+    }
+
+    public ApiResponse<String> logout(RefreshTokenRequest request) {
+        try {
+            log.info("gRPC Logout request");
+
+            kz.courier.common.v1.Response grpcResponse = authStub.logout(
+                    LogoutRequest.newBuilder()
+                            .setRefreshToken(request.getRefreshToken())
+                            .build());
+
+            if (!grpcResponse.getSuccess()) {
+                return ApiResponse.error(
+                        grpcResponse.getError().getCode(),
+                        grpcResponse.getError().getMessage()
+                );
+            }
+
+            return ApiResponse.success("Logged out successfully");
+        } catch (StatusRuntimeException e) {
+            log.error("gRPC error during logout: {}", e.getStatus());
+            return ApiResponse.error("GRPC_ERROR", "Service temporarily unavailable: " + e.getStatus().getDescription());
+        } catch (Exception e) {
+            log.error("Unexpected error during logout", e);
+            return ApiResponse.error("INTERNAL_ERROR", "An unexpected error occurred");
+        }
+    }
+
+    public ApiResponse<String> logoutAll(String actorUserId, String actorRole, String targetUserId) {
+        try {
+            log.info("gRPC LogoutAll request for actorUserId={}", actorUserId);
+
+            LogoutAllRequest.Builder grpcRequest = LogoutAllRequest.newBuilder()
+                    .setActorUserId(actorUserId)
+                    .setActorRole(Role.valueOf(actorRole.toUpperCase()));
+            if (targetUserId != null && !targetUserId.isBlank()) {
+                grpcRequest.setTargetUserId(targetUserId);
+            }
+
+            kz.courier.common.v1.Response grpcResponse = authStub.logoutAll(grpcRequest.build());
+
+            if (!grpcResponse.getSuccess()) {
+                return ApiResponse.error(
+                        grpcResponse.getError().getCode(),
+                        grpcResponse.getError().getMessage()
+                );
+            }
+
+            return ApiResponse.success("Sessions revoked successfully");
+        } catch (IllegalArgumentException e) {
+            return ApiResponse.error("INVALID_ROLE", "Invalid actor role");
+        } catch (StatusRuntimeException e) {
+            log.error("gRPC error during logout-all: {}", e.getStatus());
+            return ApiResponse.error("GRPC_ERROR", "Service temporarily unavailable: " + e.getStatus().getDescription());
+        } catch (Exception e) {
+            log.error("Unexpected error during logout-all", e);
             return ApiResponse.error("INTERNAL_ERROR", "An unexpected error occurred");
         }
     }
