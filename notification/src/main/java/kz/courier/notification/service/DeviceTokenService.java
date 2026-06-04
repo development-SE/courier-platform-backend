@@ -31,16 +31,32 @@ public class DeviceTokenService {
         String tokenHash = sha256(request.pushToken());
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
 
-        repository.findByTokenHash(tokenHash)
-                .filter(existing -> !existing.getUserId().equals(userId)
-                        || !existing.getDeviceId().equals(request.deviceId()))
-                .ifPresent(existing -> {
-                    existing.setEnabled(false);
-                    existing.setRevokedAt(now);
-                    repository.save(existing);
-                    log.info("Revoked duplicate push token owner userId={} deviceId={}",
-                            existing.getUserId(), existing.getDeviceId());
-                });
+        var existingByHash = repository.findByTokenHash(tokenHash);
+        if (existingByHash.isPresent()) {
+            DeviceToken existing = existingByHash.get();
+            if (!existing.getUserId().equals(userId)) {
+                // Different user has this push token — revoke it
+                existing.setEnabled(false);
+                existing.setRevokedAt(now);
+                repository.save(existing);
+                log.info("Revoked push token from different user userId={} deviceId={}",
+                        existing.getUserId(), existing.getDeviceId());
+            } else {
+                // Same user, possibly different deviceId (e.g. app reinstalled) — update in place
+                existing.setDeviceId(request.deviceId());
+                existing.setPlatform(request.platform().toUpperCase(Locale.ROOT));
+                existing.setProvider(provider);
+                existing.setAppVersion(request.appVersion());
+                existing.setLocale(request.locale());
+                existing.setEnabled(true);
+                existing.setRevokedAt(null);
+                existing.setLastSeenAt(now);
+                repository.save(existing);
+                log.info("Updated device token userId={} deviceId={} platform={} provider={}",
+                        userId, request.deviceId(), existing.getPlatform(), existing.getProvider());
+                return;
+            }
+        }
 
         DeviceToken token = repository.findByUserIdAndDeviceId(userId, request.deviceId())
                 .orElseGet(() -> DeviceToken.builder()

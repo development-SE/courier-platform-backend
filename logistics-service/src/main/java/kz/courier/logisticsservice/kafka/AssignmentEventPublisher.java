@@ -92,7 +92,10 @@ public class AssignmentEventPublisher {
 
     private void publishCourierOfferNotification(UUID assignmentId, UUID orderId, UUID courierId,
                                                  AssignmentStatus assignmentStatus) {
-        if (assignmentStatus != AssignmentStatus.PENDING || courierId == null) {
+        if (courierId == null) {
+            return;
+        }
+        if (assignmentStatus != AssignmentStatus.PENDING && assignmentStatus != AssignmentStatus.ASSIGNED) {
             return;
         }
 
