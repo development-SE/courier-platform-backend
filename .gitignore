@@ -1,7 +1,9 @@
 .idea/
 .vscode/
-logs
+logs/
 *.log
 .env
 **/.env
 !.env.example
+
+Antigravity-x64.exe

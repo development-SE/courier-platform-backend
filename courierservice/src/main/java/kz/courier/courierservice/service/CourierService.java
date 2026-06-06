@@ -5,10 +5,15 @@ import kz.courier.courierservice.entity.CourierProfile;
 import kz.courier.courierservice.entity.CourierType;
 import kz.courier.courierservice.entity.CourierWorkSchedule;
 import kz.courier.courierservice.entity.EmploymentStatus;
+import kz.courier.courierservice.entity.CourierDocument;
+import kz.courier.courierservice.entity.DocumentStatus;
+import kz.courier.courierservice.entity.DocumentType;
+import kz.courier.courierservice.entity.TransportType;
 import kz.courier.courierservice.exception.BusinessException;
 import kz.courier.courierservice.exception.CourierNotFoundException;
 import kz.courier.courierservice.grpc.AuthGrpcClient;
 import kz.courier.courierservice.repository.CourierProfileRepository;
+import kz.courier.courierservice.repository.CourierDocumentRepository;
 import kz.courier.courierservice.security.GatewayPrincipalProvider;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -43,6 +48,7 @@ public class CourierService {
     private final CourierProfileRepository courierProfileRepository;
     private final GatewayPrincipalProvider gatewayPrincipalProvider;
     private final AuthGrpcClient authGrpcClient;
+    private final CourierDocumentRepository courierDocumentRepository;
 
     public CourierDto.CourierProfileResponse create(CourierDto.CreateCourierRequest req) {
         GatewayPrincipalProvider.GatewayPrincipal principal =
@@ -175,6 +181,16 @@ public class CourierService {
             return ineligible(profile, evaluatedAt, "COURIER_DISABLED",
                     "Courier is currently not allowed to take orders", false);
         }
+        
+        List<DocumentType> required = getRequiredDocumentTypes(profile.getTransportType());
+        List<CourierDocument> docs = profile.getDocuments();
+        boolean allApproved = required.stream().allMatch(reqType -> docs != null && docs.stream()
+                .anyMatch(d -> d.getDocumentType() == reqType && d.getStatus() == DocumentStatus.APPROVED));
+        if (!allApproved) {
+            return ineligible(profile, evaluatedAt, "DOCUMENTS_NOT_APPROVED",
+                    "Not all required onboarding documents are approved", false);
+        }
+
         if (profile.getCourierType() == CourierType.EMPLOYEE) {
             boolean withinSchedule = isWithinSchedule(profile, evaluatedAt);
             if (!withinSchedule) {
@@ -316,6 +332,7 @@ public class CourierService {
         }
         if (req.transportType() != null) {
             profile.setTransportType(req.transportType());
+            reEvaluateVerification(profile);
         }
         if (req.isVerified() != null) {
             profile.setVerified(req.isVerified());
@@ -365,6 +382,7 @@ public class CourierService {
         }
         if (req.transportType() != null) {
             profile.setTransportType(req.transportType());
+            reEvaluateVerification(profile);
         }
         if (req.notes() != null) {
             profile.setNotes(blankToNull(req.notes()));
@@ -532,9 +550,111 @@ public class CourierService {
                                 .active(schedule.isActive())
                                 .build())
                         .toList())
+                .documents(profile.getDocuments() == null ? List.of() : profile.getDocuments().stream()
+                        .map(doc -> CourierDto.DocumentResponse.builder()
+                                .id(doc.getId())
+                                .documentType(doc.getDocumentType())
+                                .documentNumber(doc.getDocumentNumber())
+                                .fileUrl(doc.getFileUrl())
+                                .status(doc.getStatus())
+                                .rejectionReason(doc.getRejectionReason())
+                                .submittedAt(doc.getSubmittedAt())
+                                .build())
+                        .toList())
+                .missingDocumentTypes(getMissingDocumentTypes(profile))
                 .createdAt(profile.getCreatedAt())
                 .updatedAt(profile.getUpdatedAt())
                 .build();
+    }
+
+    public CourierDto.CourierProfileResponse uploadDocument(UUID courierId, DocumentType type, String documentNumber, String fileUrl) {
+        GatewayPrincipalProvider.GatewayPrincipal principal = gatewayPrincipalProvider.requireCurrentPrincipal();
+        if (hasAnyRole(principal, "COURIER")) {
+            requireSelf(courierId, "upload your document");
+        }
+
+        CourierProfile profile = findWithSchedules(courierId);
+        CourierDocument doc = courierDocumentRepository.findByCourierIdAndDocumentType(courierId, type)
+                .orElseGet(() -> CourierDocument.builder()
+                        .id(UUID.randomUUID())
+                        .courier(profile)
+                        .documentType(type)
+                        .build());
+        doc.setDocumentNumber(documentNumber);
+        doc.setFileUrl(fileUrl);
+        doc.setStatus(DocumentStatus.PENDING);
+        doc.setRejectionReason(null);
+        courierDocumentRepository.save(doc);
+
+        return get(courierId);
+    }
+
+    public CourierDto.CourierProfileResponse verifyDocument(UUID courierId, UUID documentId, CourierDto.VerifyDocumentRequest req) {
+        GatewayPrincipalProvider.GatewayPrincipal principal = gatewayPrincipalProvider.requireCurrentPrincipal();
+        CourierProfile profile = findWithSchedules(courierId);
+        if (hasAnyRole(principal, "ADMIN", "SUPER_ADMIN")) {
+            // OK
+        } else if (hasAnyRole(principal, "DIRECTOR", "MANAGER")) {
+            requireSameCompany(profile, requireCallerCompanyId(principal));
+        } else {
+            throw new BusinessException("FORBIDDEN", "Only privileged roles can verify documents");
+        }
+
+        CourierDocument doc = courierDocumentRepository.findById(documentId)
+                .orElseThrow(() -> new BusinessException("DOCUMENT_NOT_FOUND", "Document not found"));
+
+        if (!doc.getCourier().getId().equals(courierId)) {
+            throw new BusinessException("INVALID_ARGUMENT", "Document does not belong to the courier");
+        }
+
+        doc.setStatus(req.status());
+        if (req.status() == DocumentStatus.REJECTED) {
+            doc.setRejectionReason(req.rejectionReason());
+        } else {
+            doc.setRejectionReason(null);
+        }
+        courierDocumentRepository.save(doc);
+
+        reEvaluateVerification(profile);
+        return toResponse(courierProfileRepository.save(profile));
+    }
+
+    private void reEvaluateVerification(CourierProfile profile) {
+        List<DocumentType> requiredTypes = getRequiredDocumentTypes(profile.getTransportType());
+        List<CourierDocument> docs = courierDocumentRepository.findByCourierId(profile.getId());
+        boolean allApproved = requiredTypes.stream().allMatch(reqType -> docs != null && docs.stream()
+                .anyMatch(d -> d.getDocumentType() == reqType && d.getStatus() == DocumentStatus.APPROVED));
+
+        if (allApproved) {
+            profile.setVerified(true);
+            profile.setEmploymentStatus(EmploymentStatus.ACTIVE);
+            profile.setCanTakeOrders(true);
+        } else {
+            profile.setVerified(false);
+            profile.setEmploymentStatus(EmploymentStatus.ONBOARDING);
+            profile.setCanTakeOrders(false);
+        }
+    }
+
+    private List<DocumentType> getRequiredDocumentTypes(TransportType transportType) {
+        List<DocumentType> types = new ArrayList<>();
+        types.add(DocumentType.IDENTIFICATION);
+        if (transportType == TransportType.CAR || transportType == TransportType.VAN) {
+            types.add(DocumentType.DRIVERS_LICENSE);
+        }
+        return types;
+    }
+
+    private List<DocumentType> getMissingDocumentTypes(CourierProfile profile) {
+        List<DocumentType> required = getRequiredDocumentTypes(profile.getTransportType());
+        List<DocumentType> uploadedApprovedOrPending = profile.getDocuments() == null ? List.of() :
+                profile.getDocuments().stream()
+                        .filter(d -> d.getStatus() == DocumentStatus.APPROVED || d.getStatus() == DocumentStatus.PENDING)
+                        .map(CourierDocument::getDocumentType)
+                        .toList();
+        return required.stream()
+                .filter(r -> !uploadedApprovedOrPending.contains(r))
+                .toList();
     }
 
     private String blankToNull(String value) {
