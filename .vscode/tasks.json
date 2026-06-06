@@ -19,7 +19,7 @@
                                            "showReuseMessage":  false
                                        },
                       "options":  {
-                                      "cwd":  "C:\\Users\\LENOVO\\Desktop\\JavaThings\\courier-platform-backend_main\\eureka-server"
+                                      "cwd":  "D:\\DiplomaWork\\courier-platform-backend\\eureka-server"
                                   }
                   },
                   {
@@ -40,7 +40,7 @@
                                            "showReuseMessage":  false
                                        },
                       "options":  {
-                                      "cwd":  "C:\\Users\\LENOVO\\Desktop\\JavaThings\\courier-platform-backend_main\\auth-service"
+                                      "cwd":  "D:\\DiplomaWork\\courier-platform-backend\\auth-service"
                                   }
                   },
                   {
@@ -61,7 +61,7 @@
                                            "showReuseMessage":  false
                                        },
                       "options":  {
-                                      "cwd":  "C:\\Users\\LENOVO\\Desktop\\JavaThings\\courier-platform-backend_main\\api-gateway"
+                                      "cwd":  "D:\\DiplomaWork\\courier-platform-backend\\api-gateway"
                                   }
                   },
                   {
@@ -82,7 +82,7 @@
                                            "showReuseMessage":  false
                                        },
                       "options":  {
-                                      "cwd":  "C:\\Users\\LENOVO\\Desktop\\JavaThings\\courier-platform-backend_main\\user-service"
+                                      "cwd":  "D:\\DiplomaWork\\courier-platform-backend\\user-service"
                                   }
                   },
                   {
@@ -103,7 +103,7 @@
                                            "showReuseMessage":  false
                                        },
                       "options":  {
-                                      "cwd":  "C:\\Users\\LENOVO\\Desktop\\JavaThings\\courier-platform-backend_main\\order-service"
+                                      "cwd":  "D:\\DiplomaWork\\courier-platform-backend\\order-service"
                                   }
                   },
                   {
@@ -124,7 +124,7 @@
                                            "showReuseMessage":  false
                                        },
                       "options":  {
-                                      "cwd":  "C:\\Users\\LENOVO\\Desktop\\JavaThings\\courier-platform-backend_main\\companyservice"
+                                      "cwd":  "D:\\DiplomaWork\\courier-platform-backend\\companyservice"
                                   }
                   },
                   {
@@ -145,7 +145,7 @@
                                            "showReuseMessage":  false
                                        },
                       "options":  {
-                                      "cwd":  "C:\\Users\\LENOVO\\Desktop\\JavaThings\\courier-platform-backend_main\\notification"
+                                      "cwd":  "D:\\DiplomaWork\\courier-platform-backend\\notification"
                                   }
                   },
                   {
@@ -166,7 +166,7 @@
                                            "showReuseMessage":  false
                                        },
                       "options":  {
-                                      "cwd":  "C:\\Users\\LENOVO\\Desktop\\JavaThings\\courier-platform-backend_main\\courierservice"
+                                      "cwd":  "D:\\DiplomaWork\\courier-platform-backend\\courierservice"
                                   }
                   },
                   {
@@ -187,7 +187,7 @@
                                            "showReuseMessage":  false
                                        },
                       "options":  {
-                                      "cwd":  "C:\\Users\\LENOVO\\Desktop\\JavaThings\\courier-platform-backend_main\\logistics-service"
+                                      "cwd":  "D:\\DiplomaWork\\courier-platform-backend\\logistics-service"
                                   }
                   },
                   {

@@ -1,22 +1,52 @@
 package kz.courier.orderservice.service;
 
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.util.Set;
+import java.util.UUID;
+
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.transaction.annotation.Transactional;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.protobuf.Timestamp;
+
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
 import kz.courier.common.v1.Error;
 import kz.courier.common.v1.PaginationResponse;
 import kz.courier.common.v1.Response;
-import kz.courier.order.v1.*;
+import kz.courier.order.v1.ConfirmArrivalRequest;
+import kz.courier.order.v1.ConfirmArrivalResponse;
+import kz.courier.order.v1.CreateOrderRequest;
+import kz.courier.order.v1.CreateOrderResponse;
+import kz.courier.order.v1.GetDeliveryConfirmationCodeRequest;
+import kz.courier.order.v1.GetDeliveryConfirmationCodeResponse;
+import kz.courier.order.v1.GetOrderRequest;
+import kz.courier.order.v1.GetOrderResponse;
+import kz.courier.order.v1.ListOrdersRequest;
+import kz.courier.order.v1.ListOrdersResponse;
+import kz.courier.order.v1.OrderItem;
+import kz.courier.order.v1.OrderServiceGrpc;
+import kz.courier.order.v1.ResendDeliveryConfirmationCodeRequest;
+import kz.courier.order.v1.ResendDeliveryConfirmationCodeResponse;
+import kz.courier.order.v1.UpdateOrderStatusRequest;
+import kz.courier.order.v1.UpdateOrderStatusResponse;
+import kz.courier.order.v1.VerifyDeliveryCodeRequest;
+import kz.courier.order.v1.VerifyDeliveryCodeResponse;
 import kz.courier.orderservice.dto.DeliveryConfirmationCodeView;
 import kz.courier.orderservice.dto.DeliveryConfirmationIssueResult;
 import kz.courier.orderservice.dto.OrderFilter;
 import kz.courier.orderservice.exception.OrderNotFoundException;
 import kz.courier.orderservice.exception.OrderServiceException;
-import kz.courier.orderservice.mapper.OrderMapper;
 import kz.courier.orderservice.kafka.OrderEventPublisher;
-import kz.courier.orderservice.model.*;
+import kz.courier.orderservice.mapper.OrderMapper;
 import kz.courier.orderservice.model.Address;
+import kz.courier.orderservice.model.Contact;
 import kz.courier.orderservice.model.Order;
 import kz.courier.orderservice.repository.AddressRepository;
 import kz.courier.orderservice.repository.ContactRepository;
@@ -27,17 +57,6 @@ import kz.courier.orderservice.security.GrpcAuthContext;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.devh.boot.grpc.server.service.GrpcService;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Sort;
-import org.springframework.transaction.annotation.Transactional;
-
-import java.math.BigDecimal;
-import java.time.Instant;
-import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
-import java.util.Set;
-import java.util.UUID;
 
 /**
  * gRPC service implementation for the OrderService definition in order.proto.
@@ -758,7 +777,7 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
         if (isPrivileged(caller)) {
             return;
         }
-        if (caller != null && caller.hasRole("COURIER")) {
+        if (isCourier(caller)) {
             return;
         }
 
@@ -854,6 +873,10 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
 
     private boolean isCompanyScoped(AuthenticatedUser caller) {
         return caller != null && caller.hasRole(COMPANY_SCOPED_ROLES.toArray(String[]::new));
+    }
+
+    private boolean isCourier(AuthenticatedUser caller) {
+        return caller != null && caller.hasRole("COURIER");
     }
 
     private UUID parseUuid(String rawValue, String fieldName) {

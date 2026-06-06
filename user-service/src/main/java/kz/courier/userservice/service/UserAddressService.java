@@ -53,6 +53,25 @@ public class UserAddressService {
     }
 
     @Transactional(readOnly = true)
+    public UserAddressDto.PageResponse listAll(int page, int size) {
+        int safePage = Math.max(page, 1);
+        int safeSize = Math.min(Math.max(size, 1), 1000);
+        var pageable = PageRequest.of(
+                safePage - 1,
+                safeSize,
+                Sort.by(Sort.Direction.DESC, "createdAt"));
+
+        Page<UserAddress> result = addressRepo.findAll(pageable);
+        return UserAddressDto.PageResponse.builder()
+                .content(result.getContent().stream().map(this::toResponse).toList())
+                .page(safePage)
+                .pageSize(safeSize)
+                .totalItems(result.getTotalElements())
+                .totalPages(result.getTotalPages())
+                .build();
+    }
+
+    @Transactional(readOnly = true)
     public UserAddressDto.PageResponse list(UUID userId, int page, int size) {
         requireUserId(userId);
 

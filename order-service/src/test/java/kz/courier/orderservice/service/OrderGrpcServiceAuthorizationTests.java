@@ -91,6 +91,25 @@ class OrderGrpcServiceAuthorizationTests {
     }
 
     @Test
+    void getOrderAllowsForeignOrderForCourier() {
+        UUID callerId = UUID.randomUUID();
+        UUID orderId = UUID.randomUUID();
+
+        when(orderRepository.findById(orderId))
+                .thenReturn(Optional.of(fullyPopulatedOrder(orderId, UUID.randomUUID(), OrderStatus.NEW)));
+
+        RecordingObserver<GetOrderResponse> observer = new RecordingObserver<>();
+        runAs(new AuthenticatedUser(callerId.toString(), List.of("COURIER"), null),
+                () -> service.getOrder(GetOrderRequest.newBuilder()
+                        .setOrderId(orderId.toString())
+                        .build(), observer));
+
+        assertTrue(observer.completed);
+        assertTrue(observer.value.getResponse().getSuccess());
+        assertEquals(orderId.toString(), observer.value.getOrderId());
+    }
+
+    @Test
     void updateOrderStatusAllowsOnlyCancelForRegularOwner() {
         UUID callerId = UUID.randomUUID();
         UUID orderId = UUID.randomUUID();
@@ -189,6 +208,36 @@ class OrderGrpcServiceAuthorizationTests {
                 .serviceType(ServiceType.STANDARD)
                 .itemsJson("[]")
                 .status(status)
+                .build();
+    }
+
+    private Order fullyPopulatedOrder(UUID orderId, UUID authorId, OrderStatus status) {
+        kz.courier.orderservice.model.Address address = kz.courier.orderservice.model.Address.builder()
+                .id(UUID.randomUUID())
+                .type(kz.courier.orderservice.model.AddressType.USER)
+                .city("Almaty")
+                .street("Abay")
+                .house("10")
+                .latitude(43.2)
+                .longitude(76.9)
+                .build();
+
+        kz.courier.orderservice.model.Contact contact = kz.courier.orderservice.model.Contact.builder()
+                .id(UUID.randomUUID())
+                .name("John")
+                .phone("+77071234567")
+                .build();
+
+        return Order.builder()
+                .id(orderId)
+                .authorId(authorId)
+                .serviceType(ServiceType.STANDARD)
+                .itemsJson("[]")
+                .status(status)
+                .deliveryAddress(address)
+                .pickupAddress(address)
+                .recipientContact(contact)
+                .pickupContact(contact)
                 .build();
     }
 

@@ -1,13 +1,31 @@
 package kz.courier.apigateway.controller;
 
+import java.util.List;
+
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ServerWebExchange;
+
 import jakarta.validation.Valid;
 import kz.courier.apigateway.dto.request.CreateStaffUserRequest;
 import kz.courier.apigateway.dto.request.LoginRequest;
 import kz.courier.apigateway.dto.request.LogoutAllRequest;
 import kz.courier.apigateway.dto.request.RefreshTokenRequest;
 import kz.courier.apigateway.dto.request.RegisterRequest;
-import kz.courier.apigateway.dto.request.UpdateProfileRequest;
-import kz.courier.apigateway.dto.response.*;
+import kz.courier.apigateway.dto.response.ApiResponse;
+import kz.courier.apigateway.dto.response.LoginResponse;
+import kz.courier.apigateway.dto.response.RefreshTokenResponse;
+import kz.courier.apigateway.dto.response.RegisterResponse;
+import kz.courier.apigateway.dto.response.UserResponse;
 import kz.courier.apigateway.error.GatewayErrorWriter;
 import kz.courier.apigateway.grpc.AuthClient;
 import kz.courier.apigateway.observability.CorrelationIdFilter;
@@ -15,12 +33,6 @@ import kz.courier.apigateway.security.JwtUtil;
 import kz.courier.common.error.StandardErrorResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-import org.springframework.web.server.ServerWebExchange;
-
-import java.util.List;
 
 @Slf4j
 @RestController
@@ -146,53 +158,7 @@ public class AuthController {
     }
 
     /**
-     * GET /api/v1/auth/profile
-     * Get the authenticated user's own profile
-     */
-    @GetMapping("/profile")
-    public ResponseEntity<ApiResponse<UserResponse>> getProfile(
-            @RequestHeader(value = "Authorization", required = false) String authorization) {
-
-        AuthActor actor = requireAuthenticatedActor(authorization);
-        if (actor == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(ApiResponse.error("UNAUTHORIZED", "Valid token required"));
-        }
-
-        log.info("REST: Get profile for userId: {}", actor.userId());
-
-        ApiResponse<UserResponse> response = authGrpcClient.getProfile(actor.userId());
-
-        HttpStatus status = response.isSuccess() ? HttpStatus.OK : HttpStatus.BAD_REQUEST;
-        return ResponseEntity.status(status).body(response);
-    }
-
-    /**
-     * PUT /api/v1/auth/profile
-     * Update the authenticated user's own profile (firstName, lastName, email,
-     * phone)
-     */
-    @PutMapping("/profile")
-    public ResponseEntity<ApiResponse<String>> updateProfile(
-            @RequestHeader(value = "Authorization", required = false) String authorization,
-            @RequestBody UpdateProfileRequest request) {
-
-        AuthActor actor = requireAuthenticatedActor(authorization);
-        if (actor == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(ApiResponse.error("UNAUTHORIZED", "Valid token required"));
-        }
-
-        log.info("REST: Update profile for userId: {}", actor.userId());
-
-        ApiResponse<String> response = authGrpcClient.updateProfile(actor.userId(), request);
-
-        HttpStatus status = response.isSuccess() ? HttpStatus.OK : HttpStatus.BAD_REQUEST;
-        return ResponseEntity.status(status).body(response);
-    }
-
-    /**
-     * GET /api/v1/auth/users?page=1&size=10&role=COURIER
+     * GET /api/v1/auth/users?page=1&size=10&role=COURIER|CLIENT|ADMIN
      * List auth users for admin views.
      */
     @GetMapping("/users")
@@ -208,9 +174,9 @@ public class AuthController {
             return error(exchange, HttpStatus.FORBIDDEN, "FORBIDDEN", "Only privileged users can view users");
         }
         String filterRole = role == null || role.isBlank() ? "ADMIN" : role.trim().toUpperCase();
-        if (!List.of("ADMIN", "COURIER", "CLIENT", "PARTNER", "DIRECTOR", "MANAGER", "SUPER_ADMIN").contains(filterRole)) {
+        if (!List.of("ADMIN", "COURIER", "CLIENT").contains(filterRole)) {
             return error(exchange, HttpStatus.BAD_REQUEST, "INVALID_ROLE",
-                    "Invalid role specified for listing");
+                    "Only ADMIN, COURIER or CLIENT users can be listed here");
         }
         if ("ADMIN".equals(filterRole) && !"SUPER_ADMIN".equals(actor.role())) {
             return error(exchange, HttpStatus.FORBIDDEN, "FORBIDDEN", "Only SUPER_ADMIN can view admin users");

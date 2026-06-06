@@ -69,7 +69,7 @@ spring:
             - StripPrefix=2   # /api/v1/users/... → /users/...
 
         - id: company-service
-          uri: ${COMPANY_SERVICE_URL:lb://companyservice}
+          uri: ${COMPANY_SERVICE_URL:lb://company-service}
           predicates:
             - Path=/api/v1/companies/**,/api/v1/employees/**,/api/v1/addresses/**
           filters:

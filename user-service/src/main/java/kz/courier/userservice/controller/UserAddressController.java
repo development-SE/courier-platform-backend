@@ -72,6 +72,14 @@ public class UserAddressController {
         return ResponseEntity.noContent().build();
     }
 
+    @GetMapping("/addresses")
+    @PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN')")
+    public ResponseEntity<UserAddressDto.PageResponse> listAllAddresses(
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        return ResponseEntity.ok(addressService.listAll(page, size));
+    }
+
     @GetMapping("/{userId}/addresses")
     @PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN')")
     public ResponseEntity<UserAddressDto.PageResponse> listUserAddresses(
