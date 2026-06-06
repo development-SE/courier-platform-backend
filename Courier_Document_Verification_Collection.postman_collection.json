@@ -1,0 +1,519 @@
+{
+	"info": {
+		"_postman_id": "7f8de0b1-8b2b-4e0e-9ee1-f9260c6d538e",
+		"name": "Courier Document Onboarding & Verification Flow",
+		"description": "Postman Collection for testing the courier onboarding, document verification, and OSRM routing flow.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Auth",
+			"item": [
+				{
+					"name": "Courier Login",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"courier@example.com\",\n  \"password\": \"Password123!\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/auth/login",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"auth",
+								"login"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Admin/Client Login",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"admin@example.com\",\n  \"password\": \"Password123!\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/auth/login",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"auth",
+								"login"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Courier Endpoints",
+			"item": [
+				{
+					"name": "Create My Profile",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{courierToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"transportType\": \"CAR\",\n  \"notes\": \"My onboarding profile\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/couriers",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"couriers"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get My Profile",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{courierToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/couriers/me",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"couriers",
+								"me"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Upload Identification Document",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{courierToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"description": "Select PDF or Image file to upload"
+								},
+								{
+									"key": "type",
+									"value": "IDENTIFICATION",
+									"type": "text"
+								},
+								{
+									"key": "documentNumber",
+									"value": "ID12345",
+									"type": "text"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/couriers/me/documents",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"couriers",
+								"me",
+								"documents"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Upload Drivers License Document",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{courierToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"description": "Select PDF or Image file to upload"
+								},
+								{
+									"key": "type",
+									"value": "DRIVERS_LICENSE",
+									"type": "text"
+								},
+								{
+									"key": "documentNumber",
+									"value": "DL54321",
+									"type": "text"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/couriers/me/documents",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"couriers",
+								"me",
+								"documents"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Eligibility",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{courierToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/couriers/{{courierProfileId}}/eligibility",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"couriers",
+								"{{courierProfileId}}",
+								"eligibility"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Order Endpoints",
+			"item": [
+				{
+					"name": "Create Test Order (Almaty Coordinates)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{adminToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"serviceType\": \"STANDARD\",\n  \"comment\": \"Test OSRM routing\",\n  \"parcelSize\": \"SMALL\",\n  \"items\": [\n    {\n      \"itemId\": \"ITEM-1\",\n      \"name\": \"Package\",\n      \"quantity\": 1,\n      \"price\": 100.0\n    }\n  ],\n  \"pickupAddress\": {\n    \"type\": \"COMPANY\",\n    \"city\": \"Almaty\",\n    \"street\": \"Auezov Metro\",\n    \"house\": \"1\",\n    \"latitude\": 43.24350,\n    \"longitude\": 76.90450\n  },\n  \"pickupInfo\": {\n    \"name\": \"Warehouse\",\n    \"phone\": \"+77777777777\"\n  },\n  \"deliveryAddress\": {\n    \"type\": \"USER\",\n    \"city\": \"Almaty\",\n    \"street\": \"Al-Farabi\",\n    \"house\": \"2\",\n    \"latitude\": 43.22050,\n    \"longitude\": 76.91500\n  },\n  \"recipientInfo\": {\n    \"name\": \"John\",\n    \"phone\": \"+77777777777\"\n  }\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/orders",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"orders"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Admin Endpoints",
+			"item": [
+				{
+					"name": "Verify/Approve Document",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{adminToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"status\": \"APPROVED\",\n  \"rejectionReason\": null\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/couriers/{{courierProfileId}}/documents/{{documentId}}/verify",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"couriers",
+								"{{courierProfileId}}",
+								"documents",
+								"{{documentId}}",
+								"verify"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Reject Document",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{adminToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"status\": \"REJECTED\",\n  \"rejectionReason\": \"Document is blurry or illegible. Please re-upload.\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/couriers/{{courierProfileId}}/documents/{{documentId}}/verify",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"couriers",
+								"{{courierProfileId}}",
+								"documents",
+								"{{documentId}}",
+								"verify"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Download/View Document File",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{adminToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/couriers/documents/download/{{fileName}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"couriers",
+								"documents",
+								"download",
+								"{{fileName}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Trigger Auto-Assignment",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{adminToken}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/logistics/assignments/auto/{{orderId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"logistics",
+								"assignments",
+								"auto",
+								"{{orderId}}"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		}
+	],
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:8080",
+			"type": "string"
+		},
+		{
+			"key": "courierToken",
+			"value": "ENTER_COURIER_JWT_HERE",
+			"type": "string"
+		},
+		{
+			"key": "adminToken",
+			"value": "ENTER_ADMIN_JWT_HERE",
+			"type": "string"
+		},
+		{
+			"key": "courierProfileId",
+			"value": "ENTER_COURIER_PROFILE_ID_HERE",
+			"type": "string"
+		},
+		{
+			"key": "documentId",
+			"value": "ENTER_DOCUMENT_ID_HERE",
+			"type": "string"
+		},
+		{
+			"key": "fileName",
+			"value": "ENTER_FILE_NAME_HERE",
+			"type": "string"
+		},
+		{
+			"key": "orderId",
+			"value": "ENTER_ORDER_ID_HERE",
+			"type": "string"
+		}
+	]
+}

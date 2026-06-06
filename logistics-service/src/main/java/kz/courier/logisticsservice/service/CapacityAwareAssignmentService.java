@@ -52,6 +52,7 @@ public class CapacityAwareAssignmentService {
     private final CourierProfileClient courierProfileClient;
     private final RouteCleanupService routeCleanupService;
     private final AssignmentMetrics assignmentMetrics;
+    private final RoutingServiceClient routingServiceClient;
 
     @Value("${assignment.retry.delay-seconds:60}")
     private long retryDelaySeconds;
@@ -476,7 +477,24 @@ public class CapacityAwareAssignmentService {
         route.setActiveOrdersCount(activeOrders + 1);
         route = routeRepository.save(route);
 
-        persistStops(route.getId(), insertion.get());
+        Optional<CourierProfileClient.CourierProfileSnapshot> profileOpt =
+                courierProfileClient.getCourier(plan.courierId());
+        String transportType = profileOpt.map(CourierProfileClient.CourierProfileSnapshot::transportType).orElse("driving");
+
+        OffsetDateTime now = OffsetDateTime.now();
+        Map<StopPlan, OffsetDateTime> estimatedArrivalTimes = estimateArrivalTimes(insertion.get(), now, transportType);
+
+        int pickupEtaMinutes = estimateEtaMinutes(plan.distanceToPickupMeters());
+        for (Map.Entry<StopPlan, OffsetDateTime> entry : estimatedArrivalTimes.entrySet()) {
+            StopPlan stopPlan = entry.getKey();
+            if (order.orderId().equals(stopPlan.orderId()) && stopPlan.stopType() == RouteStopType.PICKUP) {
+                long durationSec = java.time.Duration.between(now, entry.getValue()).toSeconds();
+                pickupEtaMinutes = Math.max(1, (int) Math.ceil(durationSec / 60.0));
+                break;
+            }
+        }
+
+        persistStops(route.getId(), insertion.get(), estimatedArrivalTimes);
 
         CourierAssignment assignment = CourierAssignment.builder()
                 .orderId(order.orderId())
@@ -485,8 +503,8 @@ public class CapacityAwareAssignmentService {
                 .assignedBy(actorId)
                 .assignmentStatus(plan.assignmentStatus())
                 .assignmentPolicy(plan.assignmentPolicy())
-                .assignedAt(OffsetDateTime.now())
-                .etaMinutes(estimateEtaMinutes(plan.distanceToPickupMeters()))
+                .assignedAt(now)
+                .etaMinutes(pickupEtaMinutes)
                 .score(plan.score())
                 .demandUnits(demandUnits)
                 .build();
@@ -720,9 +738,7 @@ public class CapacityAwareAssignmentService {
         return Optional.ofNullable(best);
     }
 
-    private void persistStops(UUID routeId, InsertionPlan insertion) {
-        OffsetDateTime now = OffsetDateTime.now();
-        Map<StopPlan, OffsetDateTime> estimatedArrivalTimes = estimateArrivalTimes(insertion, now);
+    private void persistStops(UUID routeId, InsertionPlan insertion, Map<StopPlan, OffsetDateTime> estimatedArrivalTimes) {
         List<RouteStop> existingMutable = insertion.stops().stream()
                 .map(StopPlan::existingStop)
                 .filter(Objects::nonNull)
@@ -757,14 +773,34 @@ public class CapacityAwareAssignmentService {
         stopRepository.saveAll(toSave);
     }
 
-    private Map<StopPlan, OffsetDateTime> estimateArrivalTimes(InsertionPlan insertion, OffsetDateTime baseTime) {
+    private Map<StopPlan, OffsetDateTime> estimateArrivalTimes(InsertionPlan insertion, OffsetDateTime baseTime, String transportType) {
         Map<StopPlan, OffsetDateTime> estimates = new IdentityHashMap<>();
-        Coordinate cursor = insertion.courierLocation();
-        double cumulativeMeters = 0.0;
+        
+        List<RoutingServiceClient.Coordinate> routeCoords = new ArrayList<>();
+        routeCoords.add(new RoutingServiceClient.Coordinate(insertion.courierLocation().latitude(), insertion.courierLocation().longitude()));
         for (StopPlan stop : insertion.stops()) {
-            cumulativeMeters += haversineMeters(cursor, stop.coordinate());
-            estimates.put(stop, baseTime.plusMinutes(estimateEtaMinutes(cumulativeMeters)));
-            cursor = stop.coordinate();
+            routeCoords.add(new RoutingServiceClient.Coordinate(stop.coordinate().latitude(), stop.coordinate().longitude()));
+        }
+
+        RoutingServiceClient.RouteResult routeResult = routingServiceClient.calculateRoute(transportType, routeCoords);
+
+        if (routeResult.success() && routeResult.legs().size() == insertion.stops().size()) {
+            OffsetDateTime currentTime = baseTime;
+            for (int i = 0; i < insertion.stops().size(); i++) {
+                StopPlan stop = insertion.stops().get(i);
+                RoutingServiceClient.RouteLegResult leg = routeResult.legs().get(i);
+                int legMinutes = Math.max(1, (int) Math.ceil(leg.durationSeconds() / 60.0));
+                currentTime = currentTime.plusMinutes(legMinutes);
+                estimates.put(stop, currentTime);
+            }
+        } else {
+            Coordinate cursor = insertion.courierLocation();
+            double cumulativeMeters = 0.0;
+            for (StopPlan stop : insertion.stops()) {
+                cumulativeMeters += haversineMeters(cursor, stop.coordinate());
+                estimates.put(stop, baseTime.plusMinutes(estimateEtaMinutes(cumulativeMeters)));
+                cursor = stop.coordinate();
+            }
         }
         return estimates;
     }
