@@ -3,7 +3,7 @@ spring:
     name: ${NOTIFICATION_SERVICE_NAME:notification-service}
 
   datasource:
-    url: ${NOTIFICATION_DB_URL:jdbc:postgresql://localhost:5433/notification_db}
+    url: ${NOTIFICATION_DB_URL:jdbc:postgresql://localhost:55433/notification_db}
     username: ${NOTIFICATION_DB_USERNAME:notification_svc}
     password: ${NOTIFICATION_DB_PASSWORD:notification_secret}
     driver-class-name: org.postgresql.Driver

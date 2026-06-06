@@ -1,9 +1,4 @@
 {
     "java.compile.nullAnalysis.mode": "automatic",
-    "java.configuration.updateBuildConfiguration": "interactive",
-    "java.project.sourcePaths": ["src/main/java"],
-    "java.project.outputPath": "target/classes",
-    "java.project.referencedLibraries": [
-        "lib/**/*.jar"
-    ]
+    "java.configuration.updateBuildConfiguration": "interactive"
 }

@@ -9,6 +9,8 @@ import jakarta.validation.constraints.NotNull;
 import kz.courier.courierservice.entity.CourierType;
 import kz.courier.courierservice.entity.EmploymentStatus;
 import kz.courier.courierservice.entity.TransportType;
+import kz.courier.courierservice.entity.DocumentType;
+import kz.courier.courierservice.entity.DocumentStatus;
 import lombok.Builder;
 
 import java.time.DayOfWeek;
@@ -56,6 +58,22 @@ public final class CourierDto {
             boolean active
     ) {}
 
+    public record VerifyDocumentRequest(
+            @NotNull DocumentStatus status,
+            String rejectionReason
+    ) {}
+
+    @Builder
+    public record DocumentResponse(
+            UUID id,
+            DocumentType documentType,
+            String documentNumber,
+            String fileUrl,
+            DocumentStatus status,
+            String rejectionReason,
+            LocalDateTime submittedAt
+    ) {}
+
     @Builder
     public record CourierProfileResponse(
             UUID id,
@@ -68,6 +86,8 @@ public final class CourierDto {
             int maxActiveOrders,
             String notes,
             List<ScheduleResponse> schedules,
+            List<DocumentResponse> documents,
+            List<DocumentType> missingDocumentTypes,
             LocalDateTime createdAt,
             LocalDateTime updatedAt
     ) {}
