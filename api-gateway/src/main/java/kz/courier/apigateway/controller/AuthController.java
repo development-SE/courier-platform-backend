@@ -163,9 +163,9 @@ public class AuthController {
         }
 
         String filterRole = role == null || role.isBlank() ? "ADMIN" : role.trim().toUpperCase();
-        if (!List.of("ADMIN", "COURIER").contains(filterRole)) {
+        if (!List.of("ADMIN", "COURIER", "CLIENT").contains(filterRole)) {
             return error(exchange, HttpStatus.BAD_REQUEST, "INVALID_ROLE",
-                    "Only ADMIN or COURIER users can be listed here");
+                    "Only ADMIN, COURIER or CLIENT users can be listed here");
         }
         if ("ADMIN".equals(filterRole) && !"SUPER_ADMIN".equals(actor.role())) {
             return error(exchange, HttpStatus.FORBIDDEN, "FORBIDDEN", "Only SUPER_ADMIN can view admin users");

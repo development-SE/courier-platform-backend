@@ -675,6 +675,10 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
     }
 
     private OrderFilter applyVisibilityScope(OrderFilter filter, AuthenticatedUser caller) {
+        // ADMIN / SUPER_ADMIN: global listing across every company and user.
+        if (GrpcAuthContext.isAdminOrSuperAdmin(caller)) {
+            return filter;
+        }
         if (isPrivileged(caller)) {
             return filter;
         }
@@ -755,6 +759,16 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
     }
 
     private void authorizeOrderRead(AuthenticatedUser caller, Order order) {
+        // ADMIN / SUPER_ADMIN: global read access to every order.
+        if (GrpcAuthContext.isAdminOrSuperAdmin(caller)) {
+            return;
+        }
+        // COURIER: trusted to read the orders behind their assignments.
+        // order-service holds no order->courier link, so it defers concrete
+        // assignment authorization to logistics-service.
+        if (GrpcAuthContext.isCourier(caller)) {
+            return;
+        }
         if (isPrivileged(caller)) {
             return;
         }

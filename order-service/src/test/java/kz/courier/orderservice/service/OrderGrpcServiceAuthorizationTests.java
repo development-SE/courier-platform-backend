@@ -9,6 +9,8 @@ import kz.courier.order.v1.ListOrdersRequest;
 import kz.courier.order.v1.ListOrdersResponse;
 import kz.courier.order.v1.UpdateOrderStatusRequest;
 import kz.courier.order.v1.UpdateOrderStatusResponse;
+import kz.courier.orderservice.model.Address;
+import kz.courier.orderservice.model.Contact;
 import kz.courier.orderservice.model.Order;
 import kz.courier.orderservice.model.OrderStatus;
 import kz.courier.orderservice.model.ServiceType;
@@ -27,6 +29,7 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.jpa.domain.Specification;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -88,6 +91,48 @@ class OrderGrpcServiceAuthorizationTests {
         assertTrue(observer.completed);
         assertFalse(observer.value.getResponse().getSuccess());
         assertEquals("FORBIDDEN", observer.value.getResponse().getError().getCode());
+    }
+
+    @Test
+    void getOrderAllowsForeignOrderForCourier() {
+        UUID callerId = UUID.randomUUID();
+        UUID orderId = UUID.randomUUID();
+
+        // Order authored by someone else; a COURIER must still be able to read it
+        // because order-service trusts logistics-service assignment authorization.
+        when(orderRepository.findById(orderId))
+                .thenReturn(Optional.of(order(orderId, UUID.randomUUID(), OrderStatus.NEW)));
+
+        RecordingObserver<GetOrderResponse> observer = new RecordingObserver<>();
+        runAs(new AuthenticatedUser(callerId.toString(), List.of("COURIER"), null),
+                () -> service.getOrder(GetOrderRequest.newBuilder()
+                        .setOrderId(orderId.toString())
+                        .build(), observer));
+
+        assertTrue(observer.completed);
+        assertTrue(observer.value.getResponse().getSuccess());
+        assertEquals(orderId.toString(), observer.value.getOrderId());
+    }
+
+    @Test
+    void getOrderAllowsGlobalReadForAdmin() {
+        UUID callerId = UUID.randomUUID();
+        UUID orderId = UUID.randomUUID();
+
+        // Order belongs to a foreign user/company; a SUPER_ADMIN bypasses
+        // ownership checks entirely (global read access).
+        when(orderRepository.findById(orderId))
+                .thenReturn(Optional.of(order(orderId, UUID.randomUUID(), OrderStatus.NEW)));
+
+        RecordingObserver<GetOrderResponse> observer = new RecordingObserver<>();
+        runAs(new AuthenticatedUser(callerId.toString(), List.of("SUPER_ADMIN"), null),
+                () -> service.getOrder(GetOrderRequest.newBuilder()
+                        .setOrderId(orderId.toString())
+                        .build(), observer));
+
+        assertTrue(observer.completed);
+        assertTrue(observer.value.getResponse().getSuccess());
+        assertEquals(orderId.toString(), observer.value.getOrderId());
     }
 
     @Test
@@ -183,12 +228,37 @@ class OrderGrpcServiceAuthorizationTests {
     }
 
     private Order order(UUID orderId, UUID authorId, OrderStatus status) {
+        Address address = Address.builder()
+                .id(UUID.randomUUID())
+                .type(kz.courier.orderservice.model.AddressType.USER)
+                .city("Almaty")
+                .street("Abay Ave")
+                .house("1")
+                .latitude(43.238949)
+                .longitude(76.945465)
+                .createdAt(OffsetDateTime.now())
+                .updatedAt(OffsetDateTime.now())
+                .build();
+        Contact contact = Contact.builder()
+                .id(UUID.randomUUID())
+                .name("Test")
+                .surname("User")
+                .phone("+77001234567")
+                .createdAt(OffsetDateTime.now())
+                .updatedAt(OffsetDateTime.now())
+                .build();
         return Order.builder()
                 .id(orderId)
                 .authorId(authorId)
                 .serviceType(ServiceType.STANDARD)
                 .itemsJson("[]")
                 .status(status)
+                .deliveryAddress(address)
+                .pickupAddress(address)
+                .recipientContact(contact)
+                .pickupContact(contact)
+                .createdAt(OffsetDateTime.now())
+                .updatedAt(OffsetDateTime.now())
                 .build();
     }
 

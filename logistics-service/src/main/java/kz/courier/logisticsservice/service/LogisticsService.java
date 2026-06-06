@@ -5,6 +5,10 @@ import kz.courier.logisticsservice.dto.NearbycourierProjection;
 import kz.courier.logisticsservice.entity.AssignmentHistory;
 import kz.courier.logisticsservice.entity.AssignmentStatus;
 import kz.courier.logisticsservice.entity.CourierAssignment;
+import kz.courier.logisticsservice.entity.CourierRoute;
+import kz.courier.logisticsservice.entity.RouteStatus;
+import kz.courier.logisticsservice.entity.RouteStopStatus;
+import kz.courier.logisticsservice.entity.RouteStopType;
 import kz.courier.logisticsservice.exception.AssignmentNotFoundException;
 import kz.courier.logisticsservice.exception.BusinessException;
 import kz.courier.logisticsservice.exception.LocationNotFoundException;
@@ -14,6 +18,8 @@ import kz.courier.logisticsservice.mapper.AssignmentMapper;
 import kz.courier.logisticsservice.repository.AssignmentHistoryRepository;
 import kz.courier.logisticsservice.repository.AssignmentRepository;
 import kz.courier.logisticsservice.repository.CourierLocationRepository;
+import kz.courier.logisticsservice.repository.CourierRouteRepository;
+import kz.courier.logisticsservice.repository.RouteStopRepository;
 import kz.courier.logisticsservice.security.GatewayPrincipalProvider;
 import kz.courier.logisticsservice.security.SystemPrincipalRunner;
 import kz.courier.order.v1.OrderStatus;
@@ -60,6 +66,8 @@ public class LogisticsService {
     private final AssignmentRepository assignmentRepository;
     private final AssignmentHistoryRepository historyRepository;
     private final CourierLocationRepository locationRepository;
+    private final CourierRouteRepository courierRouteRepository;
+    private final RouteStopRepository routeStopRepository;
     private final AssignmentMapper mapper;
     private final AssignmentEventPublisher eventPublisher;
     private final OrderGrpcClient orderGrpcClient;
@@ -220,6 +228,11 @@ public class LogisticsService {
         applyTerminalReason(assignment, req.newStatus(), req.reason());
         applyTimestamps(assignment, req.newStatus());
         assignment = assignmentRepository.save(assignment);
+
+        if (req.newStatus() == AssignmentStatus.PICKED_UP) {
+            completeRouteStopForAssignment(assignment, RouteStopType.PICKUP);
+        }
+
         handleTerminalOutcome(assignment, req.newStatus(), req.reason());
 
         UUID changedBy = gatewayPrincipalProvider.requireCurrentUserId();
@@ -266,6 +279,8 @@ public class LogisticsService {
         assignment.setAssignmentStatus(AssignmentStatus.DELIVERED);
         applyTimestamps(assignment, AssignmentStatus.DELIVERED);
         assignment = assignmentRepository.save(assignment);
+
+        completeRouteStopForAssignment(assignment, RouteStopType.DROPOFF);
 
         UUID changedBy = gatewayPrincipalProvider.requireCurrentUserId();
         recordHistory(id, oldStatus, AssignmentStatus.DELIVERED, changedBy, "otp-verified");
@@ -830,6 +845,56 @@ public class LogisticsService {
             log.warn("Reassignment failed orderId={} oldStatus={} reason={} error={}",
                     orderId, oldStatus, reason, ex.getMessage());
         }
+    }
+
+    // =========================================================================
+    //  RouteStop synchronization
+    // =========================================================================
+
+    /**
+     * Marks the matching {@link RouteStopType} stop as {@link RouteStopStatus#COMPLETED}
+     * for the given assignment's order on the courier's active route.
+     *
+     * <p>If the courier has no active route or no matching pending stop is found,
+     * the miss is logged but no exception is thrown — the assignment status has
+     * already been persisted by the caller and we must not roll it back for a
+     * missing stop.
+     */
+    private void completeRouteStopForAssignment(CourierAssignment assignment, RouteStopType stopType) {
+        if (assignment.getCourierId() == null) {
+            log.warn("[RouteStopSync] skip — no courierId on assignment={}", assignment.getId());
+            return;
+        }
+
+        UUID routeId = assignment.getRouteId();
+        if (routeId == null) {
+            // Fallback: look up the courier's current active route
+            routeId = courierRouteRepository
+                    .findByCourierIdAndStatus(assignment.getCourierId(), RouteStatus.ACTIVE)
+                    .map(CourierRoute::getId)
+                    .orElse(null);
+        }
+
+        if (routeId == null) {
+            log.warn("[RouteStopSync] no active route for courier={} assignment={} — cannot mark {} stop",
+                    assignment.getCourierId(), assignment.getId(), stopType);
+            return;
+        }
+
+        final UUID effectiveRouteId = routeId;
+        routeStopRepository
+                .findByRouteIdAndOrderIdAndStopTypeAndStatus(
+                        effectiveRouteId, assignment.getOrderId(), stopType, RouteStopStatus.PENDING)
+                .ifPresentOrElse(
+                        stop -> {
+                            stop.setStatus(RouteStopStatus.COMPLETED);
+                            routeStopRepository.save(stop);
+                            log.info("[RouteStopSync] {} stop completed stopId={} routeId={} orderId={} assignmentId={}",
+                                    stopType, stop.getId(), effectiveRouteId, assignment.getOrderId(), assignment.getId());
+                        },
+                        () -> log.warn("[RouteStopSync] no PENDING {} stop found routeId={} orderId={} assignmentId={}",
+                                stopType, effectiveRouteId, assignment.getOrderId(), assignment.getId())
+                );
     }
 
     private record CourierCandidateScore(

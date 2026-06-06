@@ -22,6 +22,7 @@ This repository is a multi-service Spring Boot application built as a Maven reac
 - Prometheus and Grafana for local observability. See [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md).
 
 ## Local Run
+Compile common module with `cd common && mvn install`
 
 1. Copy `.env.example` to `.env`.
 2. Update secrets and environment-specific values in `.env`.
