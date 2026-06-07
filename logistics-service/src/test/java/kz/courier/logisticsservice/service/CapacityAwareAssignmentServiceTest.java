@@ -42,6 +42,7 @@ class CapacityAwareAssignmentServiceTest {
     @Mock CourierProfileClient courierProfileClient;
     @Mock RouteCleanupService routeCleanupService;
     @Mock AssignmentMetrics assignmentMetrics;
+    @Mock RoutingServiceClient routingServiceClient;  // add this
 
     CapacityAwareAssignmentService service;
 
@@ -62,7 +63,8 @@ class CapacityAwareAssignmentServiceTest {
                 gatewayPrincipalProvider,
                 courierProfileClient,
                 routeCleanupService,
-                assignmentMetrics);
+                assignmentMetrics, 
+                routingServiceClient);
         actorId = UUID.randomUUID();
         orderId = UUID.randomUUID();
         when(gatewayPrincipalProvider.requireCurrentUserId()).thenReturn(actorId);
