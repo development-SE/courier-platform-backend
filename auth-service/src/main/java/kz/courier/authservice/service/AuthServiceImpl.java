@@ -184,6 +184,9 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
                     : null;
             validateStaffCompanyScope(targetRole, companyId);
 
+            // COURIER employees created by admin are auto-verified so they can log in immediately
+            boolean isCourierEmployee = targetRole == Role.COURIER;
+
             User user = User.builder()
                     .email(req.getEmail())
                     .passwordHash(passwordEncoder.encode(req.getPassword()))
@@ -193,35 +196,40 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
                     .pushConsent(req.getPushConsent())
                     .role(targetRole)
                     .companyId(companyId)
+                    .emailVerified(isCourierEmployee)
+                    .active(isCourierEmployee)
                     .createdAt(LocalDateTime.now())
                     .updatedAt(LocalDateTime.now())
                     .build();
 
             user = userRepo.save(user);
+            log.info("Staff user created userId={} role={} autoVerified={}", user.getId(), targetRole, isCourierEmployee);
 
-            String token = UUID.randomUUID().toString();
-            ConfirmationToken ct = ConfirmationToken.builder()
-                    .user(user)
-                    .token(token)
-                    .type(TokenType.EMAIL_VERIFY)
-                    .expiresAt(LocalDateTime.now().plusHours(24))
-                    .build();
-            tokenRepo.save(ct);
+            if (!isCourierEmployee) {
+                String token = UUID.randomUUID().toString();
+                ConfirmationToken ct = ConfirmationToken.builder()
+                        .user(user)
+                        .token(token)
+                        .type(TokenType.EMAIL_VERIFY)
+                        .expiresAt(LocalDateTime.now().plusHours(24))
+                        .build();
+                tokenRepo.save(ct);
 
-            NotificationEvent event = NotificationEvent.builder()
-                    .userId(user.getId().toString())
-                    .type("email_verification")
-                    .payload(Map.of(
-                            "user_name", user.getFirstName(),
-                            "verify_link", apiBaseUrl + apiVerifyPath + "?token=" + token,
-                            "email", user.getEmail()
-                    ))
-                    .build();
-            try {
-                notificationProducer.publish(event);
-            } catch (Exception notificationError) {
-                log.warn("Staff user created but notification publish failed for userId={}: {}",
-                        user.getId(), notificationError.getMessage());
+                NotificationEvent event = NotificationEvent.builder()
+                        .userId(user.getId().toString())
+                        .type("email_verification")
+                        .payload(Map.of(
+                                "user_name", user.getFirstName(),
+                                "verify_link", apiBaseUrl + apiVerifyPath + "?token=" + token,
+                                "email", user.getEmail()
+                        ))
+                        .build();
+                try {
+                    notificationProducer.publish(event);
+                } catch (Exception notificationError) {
+                    log.warn("Staff user created but notification publish failed for userId={}: {}",
+                            user.getId(), notificationError.getMessage());
+                }
             }
 
             RegisterResponse reply = RegisterResponse.newBuilder()
@@ -786,17 +794,21 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
     }
 
     private void validateStaffCreation(Role actorRole, Role targetRole) {
-        if (actorRole != Role.SUPER_ADMIN) {
-            throw new IllegalArgumentException("Only SUPER_ADMIN can create staff users");
-        }
-
-        if (targetRole != Role.ADMIN) {
-            throw new IllegalArgumentException("Staff role must be ADMIN");
+        if (targetRole == Role.ADMIN) {
+            if (actorRole != Role.SUPER_ADMIN) {
+                throw new IllegalArgumentException("Only SUPER_ADMIN can create admin users");
+            }
+        } else if (targetRole == Role.COURIER) {
+            if (actorRole != Role.SUPER_ADMIN && actorRole != Role.ADMIN) {
+                throw new IllegalArgumentException("Only ADMIN or SUPER_ADMIN can create courier employee accounts");
+            }
+        } else {
+            throw new IllegalArgumentException("Staff creation only supports ADMIN or COURIER roles");
         }
     }
 
     private void validateStaffCompanyScope(Role targetRole, UUID companyId) {
-        if (companyId != null) {
+        if (targetRole == Role.ADMIN && companyId != null) {
             throw new IllegalArgumentException("companyId must be empty for ADMIN");
         }
     }

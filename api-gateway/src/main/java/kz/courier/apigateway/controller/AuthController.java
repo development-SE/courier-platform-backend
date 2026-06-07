@@ -62,7 +62,7 @@ public class AuthController {
 
     /**
      * POST /api/v1/auth/staff
-     * Super-admin-only platform staff creation for ADMIN accounts.
+     * Admin-only user creation: SUPER_ADMIN can create ADMIN accounts, ADMIN/SUPER_ADMIN can create COURIER employee accounts.
      */
     @PostMapping("/staff")
     public ResponseEntity<?> createStaffUser(
@@ -70,9 +70,9 @@ public class AuthController {
             @Valid @RequestBody CreateStaffUserRequest request,
             ServerWebExchange exchange) {
 
-        AuthActor actor = requireSuperAdminActor(authorization);
+        AuthActor actor = requireAdminOrSuperAdminActor(authorization);
         if (actor == null) {
-            return error(exchange, HttpStatus.FORBIDDEN, "FORBIDDEN", "Only SUPER_ADMIN can create admin users");
+            return error(exchange, HttpStatus.FORBIDDEN, "FORBIDDEN", "Only ADMIN or SUPER_ADMIN can create staff accounts");
         }
 
         ApiResponse<RegisterResponse> response = authGrpcClient.createStaffUser(request, actor.userId(), actor.role());
@@ -230,6 +230,12 @@ public class AuthController {
     private AuthActor requireSuperAdminActor(String authorization) {
         AuthActor actor = requirePrivilegedActor(authorization);
         return actor != null && "SUPER_ADMIN".equals(actor.role()) ? actor : null;
+    }
+
+    private AuthActor requireAdminOrSuperAdminActor(String authorization) {
+        AuthActor actor = requireAuthenticatedActor(authorization);
+        if (actor == null) return null;
+        return List.of("ADMIN", "SUPER_ADMIN").contains(actor.role()) ? actor : null;
     }
 
     private AuthActor requirePrivilegedActor(String authorization) {
