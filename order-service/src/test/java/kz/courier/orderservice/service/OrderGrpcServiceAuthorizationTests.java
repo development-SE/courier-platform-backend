@@ -176,6 +176,41 @@ class OrderGrpcServiceAuthorizationTests {
         assertEquals("INVALID_ARGUMENT", observer.value.getResponse().getError().getCode());
     }
 
+    @Test
+    void getOrderAllowsCourierToQueryOrderDetails() {
+        UUID callerId = UUID.randomUUID();
+        UUID orderId = UUID.randomUUID();
+
+        when(orderRepository.findById(orderId))
+                .thenReturn(Optional.of(populatedOrder(orderId, UUID.randomUUID(), OrderStatus.NEW)));
+
+        RecordingObserver<GetOrderResponse> observer = new RecordingObserver<>();
+        runAs(new AuthenticatedUser(callerId.toString(), List.of("COURIER"), null),
+                () -> service.getOrder(GetOrderRequest.newBuilder()
+                        .setOrderId(orderId.toString())
+                        .build(), observer));
+
+        assertTrue(observer.completed);
+        assertTrue(observer.value.getResponse().getSuccess());
+    }
+
+    @Test
+    void listOrdersAllowsCourierToBypassClientUserIdFilter() {
+        UUID callerId = UUID.randomUUID();
+        when(orderRepository.findAll(any(Specification.class), eq(PageRequest.of(0, 20,
+                org.springframework.data.domain.Sort.by("createdAt").descending()))))
+                .thenReturn(new PageImpl<>(List.of()));
+
+        RecordingObserver<ListOrdersResponse> observer = new RecordingObserver<>();
+        runAs(new AuthenticatedUser(callerId.toString(), List.of("COURIER"), null),
+                () -> service.listOrders(ListOrdersRequest.newBuilder().build(), observer));
+
+        assertTrue(observer.completed);
+        assertTrue(observer.value.getResponse().getSuccess());
+        assertEquals(0, observer.value.getOrdersCount());
+        verify(orderRepository).findAll(any(Specification.class), any(PageRequest.class));
+    }
+
     private void runAs(AuthenticatedUser user, Runnable action) {
         Context.current()
                 .withValue(GrpcAuthContext.AUTHENTICATED_USER_KEY, user)
@@ -189,6 +224,34 @@ class OrderGrpcServiceAuthorizationTests {
                 .serviceType(ServiceType.STANDARD)
                 .itemsJson("[]")
                 .status(status)
+                .build();
+    }
+
+    private Order populatedOrder(UUID orderId, UUID authorId, OrderStatus status) {
+        kz.courier.orderservice.model.Address addr = kz.courier.orderservice.model.Address.builder()
+                .id(UUID.randomUUID())
+                .type(kz.courier.orderservice.model.AddressType.USER)
+                .city("Almaty")
+                .street("Auezov")
+                .house("1")
+                .latitude(43.24350)
+                .longitude(76.90450)
+                .build();
+        kz.courier.orderservice.model.Contact contact = kz.courier.orderservice.model.Contact.builder()
+                .id(UUID.randomUUID())
+                .name("John")
+                .phone("+77777777777")
+                .build();
+        return Order.builder()
+                .id(orderId)
+                .authorId(authorId)
+                .serviceType(ServiceType.STANDARD)
+                .itemsJson("[]")
+                .status(status)
+                .deliveryAddress(addr)
+                .pickupAddress(addr)
+                .recipientContact(contact)
+                .pickupContact(contact)
                 .build();
     }
 

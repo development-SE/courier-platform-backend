@@ -15,6 +15,9 @@ public class OrderListFilterDto {
     private OffsetDateTime toDate;
     private Double minAmount;
     private Double maxAmount;
+    private Double lat;
+    private Double lng;
+    private Double radiusKm;
     private int page;
     private int size;
     private String sortBy;

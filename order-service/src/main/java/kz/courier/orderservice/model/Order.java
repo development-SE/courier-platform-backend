@@ -68,6 +68,10 @@ public class Order {
     @Builder.Default
     private BigDecimal totalAmount = BigDecimal.ZERO;
 
+    @Column(name = "delivery_fee", nullable = false, precision = 12, scale = 2)
+    @Builder.Default
+    private BigDecimal deliveryFee = BigDecimal.ZERO;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "parcel_size", nullable = false, length = 20)
     @Builder.Default
