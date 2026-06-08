@@ -61,7 +61,10 @@
                                            "showReuseMessage":  false
                                        },
                       "options":  {
-                                      "cwd":  "D:\\DiplomaWork\\courier-platform-backend\\api-gateway"
+                                      "cwd":  "D:\\DiplomaWork\\courier-platform-backend\\api-gateway",
+                                      "env":  {
+                                                  "GOOGLE_MAPS_API_KEY":  "AIzaSyC6PEiHzLcssEZO1RZbtC4phruGoIDgozg"
+                                              }
                                   }
                   },
                   {

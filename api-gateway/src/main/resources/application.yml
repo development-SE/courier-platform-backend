@@ -125,15 +125,6 @@ spring:
             - name: LoggingFilter
             - StripPrefix=3   # /api/v1/notifications/devices -> /devices
 
-        # Courier Service - courier profile, info
-        - id: courier-service
-          uri: ${COURIER_SERVICE_URL:lb://courier-service}
-          predicates:
-            - Path=/api/v1/couriers/**
-          filters:
-            - name: JwtAuthenticationFilter
-            - name: LoggingFilter
-            - StripPrefix=2
 
       # Default Filters (applied to all routes)
       default-filters:

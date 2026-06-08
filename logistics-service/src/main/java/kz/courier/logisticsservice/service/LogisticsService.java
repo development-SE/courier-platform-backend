@@ -120,9 +120,10 @@ public class LogisticsService {
     @Transactional
     public LogisticsDto.AssignmentResponse acceptAssignment(UUID id) {
         CourierAssignment assignment = findAssignment(id);
-        if (assignment.getAssignmentStatus() != AssignmentStatus.PENDING) {
+        if (assignment.getAssignmentStatus() != AssignmentStatus.PENDING
+                && assignment.getAssignmentStatus() != AssignmentStatus.ASSIGNED) {
             throw new BusinessException("INVALID_STATUS",
-                    "Only PENDING offers can be accepted by courier");
+                    "Only PENDING or ASSIGNED assignments can be accepted by courier");
         }
         return updateStatus(id, new LogisticsDto.UpdateStatusRequest(
                 AssignmentStatus.ACCEPTED,
@@ -166,6 +167,43 @@ public class LogisticsService {
     public LogisticsDto.PagedAssignments listAssignments(
             UUID courierId, UUID orderId, AssignmentStatus status,
             int page, int pageSize, String sortBy, boolean descending) {
+
+        if (gatewayPrincipalProvider.hasRole("CLIENT")) {
+            if (orderId == null) {
+                throw new BusinessException("FORBIDDEN",
+                        "Clients must specify an orderId to view assignments");
+            }
+            orderGrpcClient.getOrder(orderId);
+
+            Sort sort = descending
+                    ? Sort.by(sortBy).descending()
+                    : Sort.by(sortBy).ascending();
+            Page<CourierAssignment> dbResult = assignmentRepository.findAllByOrderId(
+                    orderId, PageRequest.of(page - 1, pageSize, sort));
+
+            List<CourierAssignment> filtered = dbResult.getContent().stream()
+                    .filter(a -> {
+                        AssignmentStatus s = a.getAssignmentStatus();
+                        if (s == AssignmentStatus.ACCEPTED || s == AssignmentStatus.PICKED_UP ||
+                            s == AssignmentStatus.IN_TRANSIT || s == AssignmentStatus.ARRIVED ||
+                            s == AssignmentStatus.DELIVERED) {
+                            return true;
+                        }
+                        if (s == AssignmentStatus.CANCELLED || s == AssignmentStatus.FAILED) {
+                            return a.getAcceptedAt() != null;
+                        }
+                        return false;
+                    })
+                    .toList();
+
+            return LogisticsDto.PagedAssignments.builder()
+                    .content(filtered.stream().map(mapper::toResponse).toList())
+                    .currentPage(dbResult.getNumber() + 1)
+                    .pageSize(dbResult.getSize())
+                    .totalItems(filtered.size())
+                    .totalPages((int) Math.ceil((double) filtered.size() / dbResult.getSize()))
+                    .build();
+        }
 
         UUID effectiveCourierId = restrictAssignmentListCourierId(courierId);
         Sort sort = descending
@@ -521,6 +559,24 @@ public class LogisticsService {
         UUID currentUserId = gatewayPrincipalProvider.requireCurrentUserId();
         if (assignment.getCourierId() != null && currentUserId.equals(assignment.getCourierId())) {
             return;
+        }
+
+        if (gatewayPrincipalProvider.hasRole("CLIENT") && assignment.getOrderId() != null) {
+            AssignmentStatus s = assignment.getAssignmentStatus();
+            boolean isAcceptedOrTransit = s == AssignmentStatus.ACCEPTED || s == AssignmentStatus.PICKED_UP ||
+                    s == AssignmentStatus.IN_TRANSIT || s == AssignmentStatus.ARRIVED ||
+                    s == AssignmentStatus.DELIVERED;
+            boolean isAcceptedBeforeTerminal = (s == AssignmentStatus.CANCELLED || s == AssignmentStatus.FAILED)
+                    && assignment.getAcceptedAt() != null;
+
+            if (isAcceptedOrTransit || isAcceptedBeforeTerminal) {
+                try {
+                    orderGrpcClient.getOrder(assignment.getOrderId());
+                    return;
+                } catch (Exception e) {
+                    // fall through
+                }
+            }
         }
 
         throw new BusinessException("FORBIDDEN",

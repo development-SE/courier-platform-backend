@@ -322,6 +322,7 @@ services:
       AUTH_GRPC_ADDRESS: ${AUTH_GRPC_ADDRESS}
       ORDER_GRPC_ADDRESS: ${ORDER_GRPC_ADDRESS}
       JWT_SECRET: ${JWT_SECRET}
+      GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY}
       TZ: ${APP_TIME_ZONE:-Asia/Qyzylorda}
     depends_on:
       redis:
