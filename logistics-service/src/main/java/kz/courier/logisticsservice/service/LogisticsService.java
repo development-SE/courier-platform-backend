@@ -128,9 +128,10 @@ public class LogisticsService {
     @Transactional
     public LogisticsDto.AssignmentResponse acceptAssignment(UUID id) {
         CourierAssignment assignment = findAssignment(id);
-        if (assignment.getAssignmentStatus() != AssignmentStatus.PENDING) {
+        if (assignment.getAssignmentStatus() != AssignmentStatus.PENDING
+                && assignment.getAssignmentStatus() != AssignmentStatus.ASSIGNED) {
             throw new BusinessException("INVALID_STATUS",
-                    "Only PENDING offers can be accepted by courier");
+                    "Only PENDING or ASSIGNED offers can be accepted by courier");
         }
         return updateStatus(id, new LogisticsDto.UpdateStatusRequest(
                 AssignmentStatus.ACCEPTED,
@@ -281,6 +282,8 @@ public class LogisticsService {
         assignment = assignmentRepository.save(assignment);
 
         completeRouteStopForAssignment(assignment, RouteStopType.DROPOFF);
+
+        routeCleanupService.cleanupAssignment(assignment, "delivered", false);
 
         UUID changedBy = gatewayPrincipalProvider.requireCurrentUserId();
         recordHistory(id, oldStatus, AssignmentStatus.DELIVERED, changedBy, "otp-verified");
@@ -776,6 +779,10 @@ public class LogisticsService {
                 || newStatus == AssignmentStatus.TIMED_OUT
                 || newStatus == AssignmentStatus.CANCELLED
                 || newStatus == AssignmentStatus.FAILED;
+        
+        if (!reassignRequired) {
+            return;
+        }
         RouteCleanupService.CleanupResult cleanup =
                 routeCleanupService.cleanupAssignment(assignment, reason, reassignRequired);
         if (newStatus == AssignmentStatus.REJECTED) {

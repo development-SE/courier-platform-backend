@@ -26,6 +26,7 @@ public class ConfirmationToken {
     private boolean used = false;
 
     @Column(name = "created_at")
+    @Builder.Default
     private LocalDateTime createdAt = LocalDateTime.now();
 }
 

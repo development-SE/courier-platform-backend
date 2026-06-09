@@ -33,7 +33,9 @@ public class RegisterRequest {
     @Size(min = 2, max = 100, message = "Last name must be 2-100 characters")
     private String lastName;
 
+    @Builder.Default
     private Boolean pushConsent = false;
 
+    @Builder.Default
     private String role = "CLIENT";  // Public registration may create CLIENT or COURIER only.
 }

@@ -21,5 +21,6 @@ public class LoginLog {
 
     private String userAgent;
     private boolean success;
+    @Builder.Default
     private LocalDateTime timestamp = LocalDateTime.now();
 }

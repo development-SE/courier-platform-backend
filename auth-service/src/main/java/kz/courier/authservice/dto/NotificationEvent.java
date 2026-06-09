@@ -11,6 +11,7 @@ import java.util.UUID;
 @Data @Builder
 public class NotificationEvent {
     @JsonProperty("event_id")
+    @Builder.Default
     private String eventId = UUID.randomUUID().toString();
 
     @JsonProperty("user_id")
@@ -23,5 +24,6 @@ public class NotificationEvent {
     private Map<String, Object> payload;
 
     @JsonProperty("created_at")
+    @Builder.Default
     private Instant createdAt = Instant.now();
 }
