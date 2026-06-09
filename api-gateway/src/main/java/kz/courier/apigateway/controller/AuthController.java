@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -16,11 +17,13 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ServerWebExchange;
 
 import jakarta.validation.Valid;
+import kz.courier.apigateway.dto.request.ChangePasswordRequestDto;
 import kz.courier.apigateway.dto.request.CreateStaffUserRequest;
 import kz.courier.apigateway.dto.request.LoginRequest;
 import kz.courier.apigateway.dto.request.LogoutAllRequest;
 import kz.courier.apigateway.dto.request.RefreshTokenRequest;
 import kz.courier.apigateway.dto.request.RegisterRequest;
+import kz.courier.apigateway.dto.request.UpdateProfileRequest;
 import kz.courier.apigateway.dto.response.ApiResponse;
 import kz.courier.apigateway.dto.response.LoginResponse;
 import kz.courier.apigateway.dto.response.RefreshTokenResponse;
@@ -186,6 +189,62 @@ public class AuthController {
 
         ApiResponse<List<UserResponse>> response = authGrpcClient.listUsers(page, size, filterRole);
 
+        return apiResponse(exchange, response, HttpStatus.OK, HttpStatus.BAD_REQUEST);
+    }
+
+    /**
+     * GET /api/v1/auth/profile
+     * Returns the authenticated user's own profile.
+     */
+    @GetMapping("/profile")
+    public ResponseEntity<?> getProfile(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            ServerWebExchange exchange) {
+
+        AuthActor actor = requireAuthenticatedActor(authorization);
+        if (actor == null) {
+            return error(exchange, HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "Valid Authorization header required");
+        }
+
+        ApiResponse<UserResponse> response = authGrpcClient.getProfile(actor.userId());
+        return apiResponse(exchange, response, HttpStatus.OK, HttpStatus.NOT_FOUND);
+    }
+
+    /**
+     * PUT /api/v1/auth/profile
+     * Updates the authenticated user's own profile (firstName, lastName, email, phone).
+     */
+    @PutMapping("/profile")
+    public ResponseEntity<?> updateProfile(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @RequestBody UpdateProfileRequest request,
+            ServerWebExchange exchange) {
+
+        AuthActor actor = requireAuthenticatedActor(authorization);
+        if (actor == null) {
+            return error(exchange, HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "Valid Authorization header required");
+        }
+
+        ApiResponse<String> response = authGrpcClient.updateProfile(actor.userId(), request);
+        return apiResponse(exchange, response, HttpStatus.OK, HttpStatus.BAD_REQUEST);
+    }
+
+    /**
+     * POST /api/v1/auth/change-password
+     * Changes the authenticated user's password.
+     */
+    @PostMapping("/change-password")
+    public ResponseEntity<?> changePassword(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @RequestBody ChangePasswordRequestDto request,
+            ServerWebExchange exchange) {
+
+        AuthActor actor = requireAuthenticatedActor(authorization);
+        if (actor == null) {
+            return error(exchange, HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "Valid Authorization header required");
+        }
+
+        ApiResponse<String> response = authGrpcClient.changePassword(actor.userId(), request.getOldPassword(), request.getNewPassword());
         return apiResponse(exchange, response, HttpStatus.OK, HttpStatus.BAD_REQUEST);
     }
 

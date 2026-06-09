@@ -443,6 +443,36 @@ public class AuthClient {
     }
 
     /**
+     * Change user password
+     */
+    public ApiResponse<String> changePassword(String userId, String oldPassword, String newPassword) {
+        try {
+            log.info("gRPC ChangePassword request for userId: {}", userId);
+
+            kz.courier.common.v1.Response grpcResponse = authStub.changePassword(
+                    kz.courier.auth.v1.ChangePasswordRequest.newBuilder()
+                            .setUserId(userId)
+                            .setOldPassword(oldPassword)
+                            .setNewPassword(newPassword)
+                            .build());
+
+            if (!grpcResponse.getSuccess()) {
+                log.warn("Change password failed: {}", grpcResponse.getError().getMessage());
+                return ApiResponse.error(grpcResponse.getError().getCode(), grpcResponse.getError().getMessage());
+            }
+
+            return ApiResponse.success("Password changed successfully");
+
+        } catch (StatusRuntimeException e) {
+            log.error("gRPC error during changePassword: {}", e.getStatus());
+            return ApiResponse.error("GRPC_ERROR", "Service temporarily unavailable: " + e.getStatus().getDescription());
+        } catch (Exception e) {
+            log.error("Unexpected error during changePassword", e);
+            return ApiResponse.error("INTERNAL_ERROR", "An unexpected error occurred");
+        }
+    }
+
+    /**
      * Update user profile (firstName, lastName, email, phone)
      */
     public ApiResponse<String> updateProfile(String userId, kz.courier.apigateway.dto.request.UpdateProfileRequest request) {
