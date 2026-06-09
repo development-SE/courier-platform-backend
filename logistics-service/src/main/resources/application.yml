@@ -90,7 +90,7 @@ assignment:
     enabled: ${ASSIGNMENT_RETRY_ENABLED:true}
     fixed-delay-ms: ${ASSIGNMENT_RETRY_FIXED_DELAY_MS:60000}
     delay-seconds: ${ASSIGNMENT_RETRY_DELAY_SECONDS:60}
-    max-attempts: ${ASSIGNMENT_RETRY_MAX_ATTEMPTS:5}
+    max-attempts: ${ASSIGNMENT_RETRY_MAX_ATTEMPTS:25}
     batch-size: ${ASSIGNMENT_RETRY_BATCH_SIZE:10}
 
 management:

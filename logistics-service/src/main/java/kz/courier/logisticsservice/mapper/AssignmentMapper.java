@@ -17,6 +17,10 @@ import java.util.List;
 public class AssignmentMapper {
 
     public LogisticsDto.AssignmentResponse toResponse(CourierAssignment a) {
+        return toResponse(a, null);
+    }
+
+    public LogisticsDto.AssignmentResponse toResponse(CourierAssignment a, String transportType) {
         return LogisticsDto.AssignmentResponse.builder()
                 .id(a.getId())
                 .orderId(a.getOrderId())
@@ -47,6 +51,7 @@ public class AssignmentMapper {
                 .cancellationReason(a.getCancellationReason())
                 .createdAt(a.getCreatedAt())
                 .updatedAt(a.getUpdatedAt())
+                .transportType(transportType)
                 .build();
     }
 
@@ -101,12 +106,17 @@ public class AssignmentMapper {
     }
 
     public LogisticsDto.CourierLocationResponse toLocationResponse(CourierLocation loc) {
+        return toLocationResponse(loc, null);
+    }
+
+    public LogisticsDto.CourierLocationResponse toLocationResponse(CourierLocation loc, String transportType) {
         return LogisticsDto.CourierLocationResponse.builder()
                 .courierId(loc.getCourierId())
                 .latitude(loc.getLatitude())
                 .longitude(loc.getLongitude())
                 .isOnline(loc.getIsOnline())
                 .updatedAt(loc.getUpdatedAt())
+                .transportType(transportType)
                 .build();
     }
 

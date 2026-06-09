@@ -5,6 +5,7 @@ import kz.courier.logisticsservice.dto.NearbycourierProjection;
 import kz.courier.logisticsservice.entity.AssignmentHistory;
 import kz.courier.logisticsservice.entity.AssignmentStatus;
 import kz.courier.logisticsservice.entity.CourierAssignment;
+import kz.courier.logisticsservice.entity.CourierLocation;
 import kz.courier.logisticsservice.exception.AssignmentNotFoundException;
 import kz.courier.logisticsservice.exception.BusinessException;
 import kz.courier.logisticsservice.exception.LocationNotFoundException;
@@ -69,6 +70,7 @@ public class LogisticsService {
     private final AssignmentRetryScheduler assignmentRetryScheduler;
     private final RouteCleanupService routeCleanupService;
     private final AssignmentMetrics assignmentMetrics;
+    private final CourierProfileClient courierProfileClient;
 
     // =========================================================================
     //  Assignment - Create
@@ -197,7 +199,9 @@ public class LogisticsService {
                     .toList();
 
             return LogisticsDto.PagedAssignments.builder()
-                    .content(filtered.stream().map(mapper::toResponse).toList())
+                    .content(filtered.stream()
+                            .map(a -> mapper.toResponse(a, safeGetTransportType(a.getCourierId())))
+                            .toList())
                     .currentPage(dbResult.getNumber() + 1)
                     .pageSize(dbResult.getSize())
                     .totalItems(filtered.size())
@@ -413,14 +417,15 @@ public class LogisticsService {
 
     /**
      * Reads courier location after enforcing self-or-admin access.
+     * Enriches the response with the courier's transport type from the profile service.
      */
     @Transactional(readOnly = true)
     public LogisticsDto.CourierLocationResponse getLocation(UUID courierId) {
         requireSelfOrAdmin(courierId, "read courier location");
 
-        return mapper.toLocationResponse(
-                locationRepository.findById(courierId)
-                        .orElseThrow(() -> new LocationNotFoundException(courierId)));
+        CourierLocation loc = locationRepository.findById(courierId)
+                .orElseThrow(() -> new LocationNotFoundException(courierId));
+        return mapper.toLocationResponse(loc, safeGetTransportType(courierId));
     }
 
     // =========================================================================
@@ -477,6 +482,18 @@ public class LogisticsService {
     private CourierAssignment findAssignment(UUID id) {
         return assignmentRepository.findById(id)
                 .orElseThrow(() -> new AssignmentNotFoundException(id));
+    }
+
+    private String safeGetTransportType(UUID courierId) {
+        if (courierId == null) return null;
+        try {
+            return courierProfileClient.getCourier(courierId)
+                    .map(CourierProfileClient.CourierProfileSnapshot::transportType)
+                    .orElse(null);
+        } catch (Exception ex) {
+            log.debug("Could not fetch transportType for courier={}: {}", courierId, ex.getMessage());
+            return null;
+        }
     }
 
     private UUID requireCurrentCourierId() {

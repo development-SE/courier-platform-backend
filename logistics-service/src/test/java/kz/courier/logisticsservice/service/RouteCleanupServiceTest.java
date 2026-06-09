@@ -1,5 +1,22 @@
 package kz.courier.logisticsservice.service;
 
+import java.time.OffsetDateTime;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.function.Supplier;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import static org.mockito.ArgumentMatchers.any;
+import org.mockito.Mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+import org.mockito.junit.jupiter.MockitoExtension;
+
 import kz.courier.logisticsservice.entity.AssignmentStatus;
 import kz.courier.logisticsservice.entity.CourierAssignment;
 import kz.courier.logisticsservice.entity.CourierRoute;
@@ -17,23 +34,6 @@ import kz.courier.logisticsservice.security.SystemPrincipalRunner;
 import kz.courier.order.v1.OrderStatus;
 import kz.courier.order.v1.ParcelSize;
 import kz.courier.order.v1.ServiceType;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
-
-import java.time.OffsetDateTime;
-import java.util.List;
-import java.util.Optional;
-import java.util.UUID;
-import java.util.function.Supplier;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class RouteCleanupServiceTest {
@@ -61,9 +61,7 @@ class RouteCleanupServiceTest {
                 assignmentRepository,
                 routeRepository,
                 routeStopRepository,
-                orderGrpcClient,
                 eventPublisher,
-                systemPrincipalRunner,
                 gatewayPrincipalProvider,
                 assignmentMetrics);
         assignmentId = UUID.randomUUID();

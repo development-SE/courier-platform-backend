@@ -34,6 +34,8 @@ import kz.courier.order.v1.OrderItem;
 import kz.courier.order.v1.OrderServiceGrpc;
 import kz.courier.order.v1.ResendDeliveryConfirmationCodeRequest;
 import kz.courier.order.v1.ResendDeliveryConfirmationCodeResponse;
+import kz.courier.order.v1.UpdateOrderAddressRequest;
+import kz.courier.order.v1.UpdateOrderAddressResponse;
 import kz.courier.order.v1.UpdateOrderStatusRequest;
 import kz.courier.order.v1.UpdateOrderStatusResponse;
 import kz.courier.order.v1.VerifyDeliveryCodeRequest;
@@ -333,6 +335,94 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
             log.error("[gRPC] updateOrderStatus error", e);
             responseObserver.onError(Status.INTERNAL.withDescription("Internal error").asRuntimeException());
             return;
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    //  UpdateOrderAddress
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @Override
+    @Transactional
+    public void updateOrderAddress(UpdateOrderAddressRequest request,
+                                   StreamObserver<UpdateOrderAddressResponse> responseObserver) {
+        try {
+            AuthenticatedUser caller = requireAuthenticatedUser();
+            log.info("[gRPC] updateOrderAddress orderId={} caller={}", request.getOrderId(), caller.userId());
+
+            UUID id = UUID.fromString(request.getOrderId());
+            Order order = orderRepository.findById(id)
+                    .orElseThrow(() -> new OrderNotFoundException(request.getOrderId()));
+
+            // Auth check: only order owner (client) or admins can update address
+            if (!caller.userId().equals(order.getAuthorId().toString()) && !isPrivileged(caller)) {
+                send(responseObserver,
+                        UpdateOrderAddressResponse.newBuilder()
+                                .setResponse(errorResponse("PERMISSION_DENIED", "Only order creator or admin can update address"))
+                                .build());
+                return;
+            }
+
+            // Guard status: cannot update address after picked up / delivered / cancelled / rejected
+            if (order.getStatus() == kz.courier.orderservice.model.OrderStatus.PICKED_UP
+                    || order.getStatus() == kz.courier.orderservice.model.OrderStatus.IN_TRANSIT
+                    || order.getStatus() == kz.courier.orderservice.model.OrderStatus.DELIVERY_CONFIRMATION_PENDING
+                    || order.getStatus() == kz.courier.orderservice.model.OrderStatus.DELIVERED
+                    || order.getStatus() == kz.courier.orderservice.model.OrderStatus.CANCELLED
+                    || order.getStatus() == kz.courier.orderservice.model.OrderStatus.REJECTED) {
+                send(responseObserver,
+                        UpdateOrderAddressResponse.newBuilder()
+                                .setResponse(errorResponse("INVALID_STATE", "Cannot update address for order in status: " + order.getStatus()))
+                                .build());
+                return;
+            }
+
+            Address address = order.getDeliveryAddress();
+            if (address == null) {
+                send(responseObserver,
+                        UpdateOrderAddressResponse.newBuilder()
+                                .setResponse(errorResponse("NOT_FOUND", "Order delivery address not found"))
+                                .build());
+                return;
+            }
+
+            if (request.hasApartment()) {
+                address.setApartment(request.getApartment().isBlank() ? null : request.getApartment());
+            }
+            if (request.hasEntrance()) {
+                address.setEntrance(request.getEntrance().isBlank() ? null : request.getEntrance());
+            }
+            if (request.hasFloor()) {
+                address.setFloor(request.getFloor().isBlank() ? null : request.getFloor());
+            }
+            if (request.hasHouse()) {
+                address.setHouse(request.getHouse().isBlank() ? null : request.getHouse());
+            }
+
+            addressRepository.save(address);
+            log.info("[OrderAddressUpdate] updated address details for orderId={}", order.getId());
+
+            // Publish status changed event to notify other services
+            orderEventPublisher.publishStatusChangedAfterCommit(order);
+
+            send(responseObserver,
+                    UpdateOrderAddressResponse.newBuilder()
+                            .setResponse(successResponse())
+                            .build());
+
+        } catch (OrderNotFoundException e) {
+            send(responseObserver,
+                    UpdateOrderAddressResponse.newBuilder()
+                            .setResponse(errorResponse("ORDER_NOT_FOUND", e.getMessage()))
+                            .build());
+        } catch (IllegalArgumentException e) {
+            send(responseObserver,
+                    UpdateOrderAddressResponse.newBuilder()
+                            .setResponse(errorResponse("INVALID_UUID", e.getMessage()))
+                            .build());
+        } catch (Exception e) {
+            log.error("[gRPC] updateOrderAddress error", e);
+            responseObserver.onError(Status.INTERNAL.withDescription("Internal error").asRuntimeException());
         }
     }
 
@@ -829,6 +919,13 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
         }
         if (!callerId.equals(order.getAuthorId())) {
             throw new OrderServiceException("FORBIDDEN", "You do not have access to modify this order");
+        }
+        if (order.getStatus() == kz.courier.orderservice.model.OrderStatus.ASSIGNED
+                || order.getStatus() == kz.courier.orderservice.model.OrderStatus.PICKED_UP
+                || order.getStatus() == kz.courier.orderservice.model.OrderStatus.IN_TRANSIT
+                || order.getStatus() == kz.courier.orderservice.model.OrderStatus.DELIVERY_CONFIRMATION_PENDING) {
+            throw new OrderServiceException("INVALID_TRANSITION",
+                    "Cannot cancel order after a courier has been assigned");
         }
     }
 

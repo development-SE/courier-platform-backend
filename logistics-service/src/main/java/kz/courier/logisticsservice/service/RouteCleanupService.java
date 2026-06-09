@@ -7,14 +7,11 @@ import kz.courier.logisticsservice.entity.RouteStatus;
 import kz.courier.logisticsservice.entity.RouteStop;
 import kz.courier.logisticsservice.entity.RouteStopStatus;
 import kz.courier.logisticsservice.exception.AssignmentNotFoundException;
-import kz.courier.logisticsservice.grpc.OrderGrpcClient;
 import kz.courier.logisticsservice.kafka.AssignmentEventPublisher;
 import kz.courier.logisticsservice.repository.AssignmentRepository;
 import kz.courier.logisticsservice.repository.CourierRouteRepository;
 import kz.courier.logisticsservice.repository.RouteStopRepository;
 import kz.courier.logisticsservice.security.GatewayPrincipalProvider;
-import kz.courier.logisticsservice.security.SystemPrincipalRunner;
-import kz.courier.order.v1.OrderStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -32,9 +29,7 @@ public class RouteCleanupService {
     private final AssignmentRepository assignmentRepository;
     private final CourierRouteRepository routeRepository;
     private final RouteStopRepository routeStopRepository;
-    private final OrderGrpcClient orderGrpcClient;
     private final AssignmentEventPublisher eventPublisher;
-    private final SystemPrincipalRunner systemPrincipalRunner;
     private final GatewayPrincipalProvider gatewayPrincipalProvider;
     private final AssignmentMetrics assignmentMetrics;
 
@@ -58,7 +53,7 @@ public class RouteCleanupService {
         boolean capacityReleased = cleanupRouteImpact(locked, reason);
         int stopsCancelled = cancelUncompletedStops(locked);
         boolean routeCompleted = completeRouteIfEmpty(locked.getRouteId());
-        boolean reassignmentRequested = isReassignmentEligible(locked.getOrderId(), reassignRequired);
+        boolean reassignmentRequested = reassignRequired;
         if (capacityReleased || stopsCancelled > 0 || routeCompleted) {
             assignmentMetrics.recordCleanup(reason);
         }
@@ -175,24 +170,6 @@ public class RouteCleanupService {
                     return false;
                 })
                 .orElse(false);
-    }
-
-    private boolean isReassignmentEligible(UUID orderId, boolean reassignRequired) {
-        if (!reassignRequired) {
-            return false;
-        }
-
-        try {
-            OrderGrpcClient.OrderSnapshot order = systemPrincipalRunner.run(() -> orderGrpcClient.getOrder(orderId));
-            if (order.status() == OrderStatus.CANCELLED || order.status() == OrderStatus.DELIVERED) {
-                log.info("Skipping reassignment for terminal order orderId={} status={}", orderId, order.status());
-                return false;
-            }
-            return true;
-        } catch (Exception ex) {
-            log.warn("Failed to check reassignment eligibility orderId={} reason={}", orderId, ex.getMessage());
-            return false;
-        }
     }
 
     private UUID resolveCleanupActor() {

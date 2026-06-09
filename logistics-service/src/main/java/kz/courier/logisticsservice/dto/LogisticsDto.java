@@ -94,7 +94,8 @@ public final class LogisticsDto {
             String           rejectionReason,
             String           cancellationReason,
             OffsetDateTime   createdAt,
-            OffsetDateTime   updatedAt
+            OffsetDateTime   updatedAt,
+            String           transportType
     ) {}
 
     /** Paginated list wrapper */
@@ -203,12 +204,14 @@ public final class LogisticsDto {
 
     /** Courier location response */
     @Builder
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     public record CourierLocationResponse(
             UUID           courierId,
             Double         latitude,
             Double         longitude,
             Boolean        isOnline,
-            OffsetDateTime updatedAt
+            OffsetDateTime updatedAt,
+            String         transportType
     ) {}
 
     /** Nearby courier entry — includes computed distance */

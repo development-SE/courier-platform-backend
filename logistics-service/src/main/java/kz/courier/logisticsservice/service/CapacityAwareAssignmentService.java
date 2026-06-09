@@ -648,17 +648,23 @@ public class CapacityAwareAssignmentService {
             return excludedCourierIds;
         }
 
-        Set<UUID> nearbyCourierIds = new HashSet<>();
-        for (LogisticsDto.NearbyCourierResponse nearbyCourier : nearbyCouriers) {
-            nearbyCourierIds.add(nearbyCourier.courierId());
-        }
-        if (!excludedCourierIds.containsAll(nearbyCourierIds)) {
+    // Stale couriers are rejected by evaluateCandidate() regardless — only count fresh ones
+        // when deciding whether all viable couriers have already been tried for this cycle.
+        OffsetDateTime now = OffsetDateTime.now();
+        Set<UUID> freshNearbyCourierIds = nearbyCouriers.stream()
+                .filter(c -> c.updatedAt() != null
+                        && ChronoUnit.MINUTES.between(c.updatedAt(), now) <= MAX_LOCATION_AGE_MINUTES)
+                .map(LogisticsDto.NearbyCourierResponse::courierId)
+                .collect(java.util.stream.Collectors.toSet());
+
+        if (!freshNearbyCourierIds.isEmpty() && !excludedCourierIds.containsAll(freshNearbyCourierIds)) {
+            // There are fresh couriers that haven't been offered this order yet
             return excludedCourierIds;
         }
 
         long totalExcluded = assignmentRepository.countExcludedCourierIdsByOrderId(orderId);
-        log.info("[AssignmentCycle] all nearby couriers already rejected/timed out orderId={} nearbyCouriers={} totalExcluded={}; starting another offer cycle",
-                orderId, nearbyCourierIds.size(), totalExcluded);
+         log.info("[AssignmentCycle] all fresh nearby couriers already rejected/timed out orderId={} freshNearbyCouriers={} totalExcluded={}; starting another offer cycle",
+                orderId, freshNearbyCourierIds.size(), totalExcluded);
         return Set.of();
     }
 

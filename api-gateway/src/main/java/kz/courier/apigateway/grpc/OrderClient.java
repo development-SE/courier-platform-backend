@@ -223,6 +223,41 @@ public class OrderClient {
         }
     }
 
+    public ApiResponse<String> updateOrderAddress(
+            String orderId, String house, String apartment, String entrance, String floor, AuthContext auth) {
+        try {
+            log.info("gRPC UpdateOrderAddress request for id: {}", orderId);
+
+            kz.courier.order.v1.UpdateOrderAddressRequest.Builder req = kz.courier.order.v1.UpdateOrderAddressRequest.newBuilder()
+                    .setOrderId(orderId);
+
+            if (house != null) req.setHouse(house);
+            if (apartment != null) req.setApartment(apartment);
+            if (entrance != null) req.setEntrance(entrance);
+            if (floor != null) req.setFloor(floor);
+
+            kz.courier.order.v1.UpdateOrderAddressResponse grpcResponse = authStub(auth).updateOrderAddress(req.build());
+
+            if (grpcResponse.hasResponse() && !grpcResponse.getResponse().getSuccess()) {
+                return ApiResponse.error(
+                        grpcResponse.getResponse().getError().getCode(),
+                        grpcResponse.getResponse().getError().getMessage()
+                );
+            }
+
+            return ApiResponse.success("Address updated successfully");
+
+        } catch (IllegalArgumentException e) {
+            log.warn("Invalid update order address request: {}", e.getMessage());
+            return ApiResponse.error("INVALID_ARGUMENT", e.getMessage());
+        } catch (StatusRuntimeException e) {
+            return handleGrpcError(e);
+        } catch (Exception e) {
+            log.error("Unexpected error updating order address", e);
+            return ApiResponse.error("INTERNAL_ERROR", "An unexpected error occurred");
+        }
+    }
+
     public ApiResponse<Map<String, Object>> listOrders(
             OrderListFilterDto filter, AuthContext auth) {
         try {
@@ -300,7 +335,7 @@ public class OrderClient {
             }
 
             return ApiResponse.success(Map.of(
-                    "confirmationCode", grpcResponse.getConfirmationCode(),
+                    "deliveryConfirmationCode", grpcResponse.getConfirmationCode(),
                     "expiresAt", toInstant(grpcResponse.getExpiresAt()),
                     "attemptsRemaining", grpcResponse.getAttemptsRemaining()
             ));

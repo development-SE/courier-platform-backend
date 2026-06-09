@@ -54,13 +54,9 @@ public enum AssignmentStatus {
                     || newStatus == REJECTED
                     || newStatus == CANCELLED;
             case ACCEPTED -> newStatus == PICKED_UP || newStatus == CANCELLED;
-            case PICKED_UP -> newStatus == IN_TRANSIT || newStatus == CANCELLED;
-            case IN_TRANSIT -> newStatus == ARRIVED
-                    || newStatus == FAILED
-                    || newStatus == CANCELLED;
-            case ARRIVED -> newStatus == DELIVERED
-                    || newStatus == FAILED
-                    || newStatus == CANCELLED;
+            case PICKED_UP -> newStatus == IN_TRANSIT;
+            case IN_TRANSIT -> newStatus == ARRIVED || newStatus == FAILED;
+            case ARRIVED -> newStatus == DELIVERED || newStatus == FAILED;
             case REJECTED, TIMED_OUT, DELIVERED, CANCELLED, FAILED, MANUAL_REQUIRED -> false;
         };
     }

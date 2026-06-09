@@ -217,6 +217,18 @@ message ListOrdersResponse {
   int32 total_count                      = 4;
 }
 
+message UpdateOrderAddressRequest {
+  string order_id = 1;
+  optional string apartment = 2;
+  optional string entrance = 3;
+  optional string floor = 4;
+  optional string house = 5;
+}
+
+message UpdateOrderAddressResponse {
+  kz.courier.common.v1.Response response = 1;
+}
+
 // ────────────────────────────────────────────────────────────────
 // Service Definition
 // ────────────────────────────────────────────────────────────────
@@ -230,4 +242,5 @@ service OrderService {
   rpc VerifyDeliveryCode(VerifyDeliveryCodeRequest) returns (VerifyDeliveryCodeResponse);
   rpc GetDeliveryConfirmationCode(GetDeliveryConfirmationCodeRequest) returns (GetDeliveryConfirmationCodeResponse);
   rpc ResendDeliveryConfirmationCode(ResendDeliveryConfirmationCodeRequest) returns (ResendDeliveryConfirmationCodeResponse);
+  rpc UpdateOrderAddress(UpdateOrderAddressRequest) returns (UpdateOrderAddressResponse);
 }

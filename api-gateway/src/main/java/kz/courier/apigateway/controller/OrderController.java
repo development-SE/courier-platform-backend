@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -101,6 +102,27 @@ public class OrderController {
         log.info("REST: Update Order Status request for ID: {}", orderId);
         AuthContext auth = extractAuth(authHeader);
         return mapToResponseEntity(orderClient.updateOrderStatus(orderId, request, auth), HttpStatus.OK, exchange);
+    }
+
+    /** PUT /api/v1/orders/{orderId}/delivery-address — update order delivery address details */
+    @PutMapping("/{orderId}/delivery-address")
+    public ResponseEntity<?> updateOrderAddress(
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authHeader,
+            @PathVariable String orderId,
+            @RequestBody Map<String, String> request,
+            ServerWebExchange exchange) {
+
+        log.info("REST: Update Order Address request for ID: {}", orderId);
+        AuthContext auth = extractAuth(authHeader);
+        String house = request.get("house");
+        String apartment = request.get("apartment");
+        String entrance = request.get("entrance");
+        String floor = request.get("floor");
+        return mapToResponseEntity(
+                orderClient.updateOrderAddress(orderId, house, apartment, entrance, floor, auth),
+                HttpStatus.OK,
+                exchange
+        );
     }
 
     /** GET /api/v1/orders/{orderId}/delivery-confirmation-code - in-app fallback for customer */
