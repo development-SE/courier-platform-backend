@@ -26,6 +26,9 @@ public class GatewayPrincipalProvider {
                 .map(String::trim)
                 .filter(role -> !role.isBlank())
                 .collect(Collectors.toSet());
+        if (currentRoles.contains("SUPER_ADMIN")) {
+            return true;
+        }
         return Arrays.stream(roles)
                 .filter(role -> role != null && !role.isBlank())
                 .anyMatch(currentRoles::contains);

@@ -11,4 +11,14 @@ import java.util.UUID;
 public interface RouteStopRepository extends JpaRepository<RouteStop, UUID> {
 
     List<RouteStop> findAllByRouteIdOrderBySequenceNumberAsc(UUID routeId);
+
+    java.util.Optional<RouteStop> findFirstByRouteIdAndStatusOrderBySequenceNumberAsc(
+            UUID routeId,
+            kz.courier.logisticsservice.entity.RouteStopStatus status);
+
+    java.util.Optional<RouteStop> findByRouteIdAndOrderIdAndStopTypeAndStatus(
+            UUID routeId,
+            UUID orderId,
+            kz.courier.logisticsservice.entity.RouteStopType stopType,
+            kz.courier.logisticsservice.entity.RouteStopStatus status);
 }

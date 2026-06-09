@@ -1,5 +1,7 @@
 # Courier Platform Backend
 
+Observability for local testing and diploma defense is documented in [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md).
+
 This repository is a multi-service Spring Boot application built as a Maven reactor. The Docker setup in the project root keeps local development defaults intact while making the full stack runnable from one shared `.env` file.
 
 ## Services
@@ -12,6 +14,10 @@ This repository is a multi-service Spring Boot application built as a Maven reac
 - `logistics-service` on `LOGISTICS_SERVICE_PORT`
 - `notification-service` on `NOTIFICATION_SERVICE_PORT`
 - `order-service` on gRPC `ORDER_GRPC_PORT`
+
+## Documentation
+- [API Reference](docs/API_REFERENCE.md)
+- [Logistics Assignment Visual Testing](docs/ASSIGNMENT_VISUAL_TESTING.md)
 
 ## Infrastructure
 

@@ -13,7 +13,13 @@ spring:
     gateway:
       discovery:
         locator:
-          enabled: true  # Enable automatic route creation from Eureka
+          # SECURITY: must stay disabled. When enabled, the gateway auto-creates
+          # /{serviceId}/** routes for every Eureka-registered service WITHOUT the
+          # JwtAuthenticationFilter/RoleFilter chain, letting callers bypass
+          # authentication and role checks (e.g. /user-service/users skips the
+          # ADMIN RoleFilter). All real traffic uses the explicit /api/v1/** routes
+          # and local controllers below, which keep their security filters.
+          enabled: false
           lower-case-service-id: true  # Convert service names to lowercase
 
       # Global CORS Configuration
@@ -91,6 +97,19 @@ spring:
             - name: JwtAuthenticationFilter
             - name: LoggingFilter
             - StripPrefix=3   # /api/v1/logistics/assignments/... → /assignments/...
+
+        # ── Logistics Service — Debug ──────────────────────────────────────────
+        - id: logistics-service-debug
+          uri: ${LOGISTICS_SERVICE_URL:lb://logistics-service}
+          predicates:
+            - Path=/api/v1/logistics/debug/**
+          filters:
+            - name: JwtAuthenticationFilter
+            - name: RoleFilter
+              args:
+                roles: ADMIN,SUPER_ADMIN
+            - name: LoggingFilter
+            - StripPrefix=3   # /api/v1/logistics/debug/... → /debug/...
 
         # ── Logistics Service — Courier Locations ─────────────────────────────
         # PUT    /api/v1/logistics/couriers/me/location
@@ -239,10 +258,13 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics,gateway
+        include: health,info,metrics,prometheus,gateway
   endpoint:
     health:
       show-details: always
+  metrics:
+    tags:
+      application: ${spring.application.name}
 
 # Logging
 logging:

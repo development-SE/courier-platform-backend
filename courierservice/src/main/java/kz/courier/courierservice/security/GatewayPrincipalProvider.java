@@ -43,6 +43,9 @@ public class GatewayPrincipalProvider {
         }
 
         Set<String> currentRoles = requireCurrentPrincipal().roles();
+        if (currentRoles.contains("SUPER_ADMIN")) {
+            return true;
+        }
         for (String role : roles) {
             if (role != null && currentRoles.contains(role)) {
                 return true;

@@ -790,14 +790,14 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
             throw new IllegalArgumentException("Only SUPER_ADMIN can create staff users");
         }
 
-        if (targetRole != Role.ADMIN) {
-            throw new IllegalArgumentException("Staff role must be ADMIN");
+        if (targetRole != Role.ADMIN && targetRole != Role.SUPER_ADMIN && targetRole != Role.COURIER) {
+            throw new IllegalArgumentException("Staff role must be ADMIN, SUPER_ADMIN, or COURIER");
         }
     }
 
     private void validateStaffCompanyScope(Role targetRole, UUID companyId) {
-        if (companyId != null) {
-            throw new IllegalArgumentException("companyId must be empty for ADMIN");
+        if ((targetRole == Role.ADMIN || targetRole == Role.SUPER_ADMIN) && companyId != null) {
+            throw new IllegalArgumentException("companyId must be empty for ADMIN and SUPER_ADMIN");
         }
     }
 }

@@ -39,8 +39,8 @@ public class RoleFilter extends AbstractGatewayFilterFactory<RoleFilter.Config> 
             String rolesString = rolesHeader.get(0);
             List<String> userRoles = Arrays.asList(rolesString.split(","));
 
-            // Check if user has any of the required roles
-            boolean hasRequiredRole = config.getRoles().stream()
+            // Check if user has any of the required roles or is SUPER_ADMIN
+            boolean hasRequiredRole = userRoles.contains("SUPER_ADMIN") || config.getRoles().stream()
                     .anyMatch(userRoles::contains);
 
             if (!hasRequiredRole) {

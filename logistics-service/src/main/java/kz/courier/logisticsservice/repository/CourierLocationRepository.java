@@ -19,6 +19,18 @@ public interface CourierLocationRepository extends JpaRepository<CourierLocation
 
     List<CourierLocation> findAllByIsOnlineTrue();
 
+    @Query("""
+        SELECT l FROM CourierLocation l
+        WHERE l.latitude BETWEEN :minLat AND :maxLat
+          AND l.longitude BETWEEN :minLng AND :maxLng
+        ORDER BY l.updatedAt DESC
+        """)
+    List<CourierLocation> findAllWithinBounds(
+            @Param("minLat") double minLat,
+            @Param("minLng") double minLng,
+            @Param("maxLat") double maxLat,
+            @Param("maxLng") double maxLng);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT l FROM CourierLocation l WHERE l.courierId = :courierId")
     java.util.Optional<CourierLocation> lockByCourierId(@Param("courierId") UUID courierId);

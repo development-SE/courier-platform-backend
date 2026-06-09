@@ -18,6 +18,9 @@ public record AuthenticatedUser(
 
     /** Convenience: check if the caller has at least one of the given roles. */
     public boolean hasRole(String... required) {
+        if (roles.contains("SUPER_ADMIN")) {
+            return true;
+        }
         for (String role : required) {
             if (roles.contains(role)) return true;
         }

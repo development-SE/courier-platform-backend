@@ -45,6 +45,20 @@ public class CourierLocationController {
                 LogisticsDto.ApiResponse.ok(service.updateMyLocation(req)));
     }
 
+    // ── Location admin override ───────────────────────────────────────────────
+
+    /**
+     * Admin endpoint to force a courier's location (used by simulation).
+     */
+    @PutMapping("/{courierId}/location")
+    public ResponseEntity<LogisticsDto.ApiResponse<LogisticsDto.CourierLocationResponse>> forceLocation(
+            @PathVariable UUID courierId,
+            @Valid @RequestBody LogisticsDto.UpdateLocationRequest req) {
+
+        return ResponseEntity.ok(
+                LogisticsDto.ApiResponse.ok(service.forceCourierLocation(courierId, req)));
+    }
+
     // ── Location read ─────────────────────────────────────────────────────────
 
     @GetMapping("/{courierId}/location")

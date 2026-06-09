@@ -2,10 +2,13 @@ package kz.courier.logisticsservice.grpc;
 
 import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
+import kz.courier.common.v1.PaginationRequest;
 import kz.courier.logisticsservice.exception.BusinessException;
 import kz.courier.logisticsservice.security.GatewayPrincipalProvider;
 import kz.courier.order.v1.GetOrderRequest;
 import kz.courier.order.v1.GetOrderResponse;
+import kz.courier.order.v1.ListOrdersRequest;
+import kz.courier.order.v1.ListOrdersResponse;
 import kz.courier.order.v1.OrderServiceGrpc;
 import kz.courier.order.v1.OrderStatus;
 import kz.courier.order.v1.ParcelSize;
@@ -24,6 +27,9 @@ import org.springframework.stereotype.Component;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -116,6 +122,41 @@ public class OrderGrpcClient {
         }
     }
 
+    public List<OrderSnapshot> listOrdersByStatuses(Collection<OrderStatus> statuses, int limitPerStatus) {
+        GatewayPrincipalProvider.GatewayPrincipal principal =
+                gatewayPrincipalProvider.requireCurrentPrincipal();
+        List<OrderSnapshot> results = new ArrayList<>();
+        int safeLimit = Math.max(1, Math.min(limitPerStatus, 100));
+
+        for (OrderStatus status : statuses) {
+            try {
+                ListOrdersResponse response = authenticatedStub(principal).listOrders(
+                        ListOrdersRequest.newBuilder()
+                                .setPagination(PaginationRequest.newBuilder()
+                                        .setPage(1)
+                                        .setPageSize(safeLimit)
+                                        .build())
+                                .setStatus(status)
+                                .setSortBy("created_at")
+                                .setSortDesc(true)
+                                .build());
+
+                if (response.hasResponse() && !response.getResponse().getSuccess()) {
+                    String code = response.getResponse().getError().getCode();
+                    String message = response.getResponse().getError().getMessage();
+                    throw new BusinessException(code != null ? code : "ORDER_SERVICE_ERROR",
+                            message != null ? message : "order-service rejected list request");
+                }
+
+                response.getOrdersList().forEach(order -> results.add(toSnapshot(order)));
+            } catch (StatusRuntimeException ex) {
+                throw mapGrpcError(null, ex);
+            }
+        }
+
+        return results;
+    }
+
     /**
      * Verifies the customer OTP in order-service. Logistics calls this from the
      * assignment endpoint so the assigned-courier authorization remains tied to
@@ -197,6 +238,33 @@ public class OrderGrpcClient {
 
         return new BusinessException(businessCode,
                 description != null ? description : "Failed to load order from order-service");
+    }
+
+    private OrderSnapshot toSnapshot(GetOrderResponse response) {
+        if (!response.hasPickupAddress()) {
+            throw new BusinessException("ORDER_PICKUP_LOCATION_MISSING",
+                    "Order " + response.getOrderId() + " does not have pickup coordinates");
+        }
+        if (!response.hasDeliveryAddress()) {
+            throw new BusinessException("ORDER_DELIVERY_LOCATION_MISSING",
+                    "Order " + response.getOrderId() + " does not have delivery coordinates");
+        }
+
+        return new OrderSnapshot(
+                UUID.fromString(response.getOrderId()),
+                response.getStatus(),
+                response.getServiceType(),
+                parseOptionalUuid(response.getCompanyId()),
+                response.getPickupAddress().getLatitude(),
+                response.getPickupAddress().getLongitude(),
+                response.getDeliveryAddress().getLatitude(),
+                response.getDeliveryAddress().getLongitude(),
+                response.hasParcelSize() ? response.getParcelSize() : ParcelSize.SMALL,
+                response.getItemsList().stream().mapToInt(item -> item.getQuantity()).sum(),
+                buildPickupLabel(response),
+                Instant.ofEpochSecond(
+                        response.getCreatedAt().getSeconds(),
+                        response.getCreatedAt().getNanos()).atOffset(ZoneOffset.UTC));
     }
 
     private String buildPickupLabel(GetOrderResponse response) {

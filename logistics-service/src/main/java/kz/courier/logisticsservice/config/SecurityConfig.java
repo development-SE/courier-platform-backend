@@ -60,6 +60,11 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.PATCH, "/couriers/me/online").authenticated()
                         .requestMatchers(HttpMethod.GET, "/couriers/*/location").authenticated()
 
+                        // Force-set another courier's location (simulation) — admins only.
+                        // Must come after /couriers/me/location so self-service still resolves.
+                        .requestMatchers(HttpMethod.PUT, "/couriers/*/location")
+                        .hasAnyRole("ADMIN", "SUPER_ADMIN")
+
                         // Assignments: read for couriers, write for admins
                         .requestMatchers(HttpMethod.POST, "/assignments/auto/**")
                         .hasAnyRole("ADMIN", "SUPER_ADMIN")

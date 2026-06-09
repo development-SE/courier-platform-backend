@@ -49,14 +49,14 @@ public class CourierService {
                 gatewayPrincipalProvider.requireCurrentPrincipal();
 
         UUID resolvedUserId = req.userId();
-        if (hasAnyRole(principal, "COURIER")) {
-            req = normalizeSelfServiceCreate(req, gatewayPrincipalProvider.requireCurrentUserId());
-            resolvedUserId = req.userId();
-        } else if (hasAnyRole(principal, "ADMIN", "SUPER_ADMIN")) {
+        if (hasAnyRole(principal, "ADMIN", "SUPER_ADMIN")) {
             req = normalizePrivilegedCreate(req);
             resolvedUserId = req.userId();
         } else if (hasAnyRole(principal, "DIRECTOR", "MANAGER")) {
             req = normalizeCompanyScopedCreate(req, requireCallerCompanyId(principal));
+            resolvedUserId = req.userId();
+        } else if (hasAnyRole(principal, "COURIER")) {
+            req = normalizeSelfServiceCreate(req, gatewayPrincipalProvider.requireCurrentUserId());
             resolvedUserId = req.userId();
         } else {
             throw new BusinessException("FORBIDDEN",
@@ -397,6 +397,9 @@ public class CourierService {
 
     private boolean hasAnyRole(GatewayPrincipalProvider.GatewayPrincipal principal, String... roles) {
         Set<String> currentRoles = principal.roles();
+        if (currentRoles.contains("SUPER_ADMIN")) {
+            return true;
+        }
         for (String role : roles) {
             if (currentRoles.contains(role)) {
                 return true;

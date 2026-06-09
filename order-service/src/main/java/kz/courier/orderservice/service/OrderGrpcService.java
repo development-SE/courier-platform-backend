@@ -841,7 +841,10 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
     }
 
     private boolean isCompanyScoped(AuthenticatedUser caller) {
-        return caller != null && caller.hasRole(COMPANY_SCOPED_ROLES.toArray(String[]::new));
+        if (caller == null || caller.roles().contains("SUPER_ADMIN")) {
+            return false;
+        }
+        return caller.roles().stream().anyMatch(COMPANY_SCOPED_ROLES::contains);
     }
 
     private UUID parseUuid(String rawValue, String fieldName) {

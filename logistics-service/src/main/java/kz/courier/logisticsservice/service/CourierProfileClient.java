@@ -54,7 +54,8 @@ public class CourierProfileClient {
                     data.path("transportType").asText(),
                     data.path("isVerified").asBoolean(false),
                     data.path("canTakeOrders").asBoolean(false),
-                    data.path("maxActiveOrders").asInt(1)));
+                    data.path("maxActiveOrders").asInt(1),
+                    data.path("displayName").asText(null)));
         } catch (HttpClientErrorException.NotFound ex) {
             log.debug("Courier profile not found courierId={}", courierId);
             return Optional.empty();
@@ -124,7 +125,8 @@ public class CourierProfileClient {
             String transportType,
             boolean verified,
             boolean canTakeOrders,
-            int maxActiveOrders
+            int maxActiveOrders,
+            String displayName
     ) {}
 
     public record CourierEligibilitySnapshot(
