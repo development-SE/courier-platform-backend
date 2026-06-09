@@ -49,7 +49,7 @@ public class AuthController {
 
     /**
      * POST /api/v1/auth/staff
-     * Super-admin-only platform staff creation for ADMIN accounts.
+     * Platform staff/courier creation.
      */
     @PostMapping("/staff")
     public ResponseEntity<?> createStaffUser(
@@ -57,9 +57,22 @@ public class AuthController {
             @Valid @RequestBody CreateStaffUserRequest request,
             ServerWebExchange exchange) {
 
-        AuthActor actor = requireSuperAdminActor(authorization);
+        AuthActor actor = requirePrivilegedActor(authorization);
         if (actor == null) {
-            return error(exchange, HttpStatus.FORBIDDEN, "FORBIDDEN", "Only SUPER_ADMIN can create admin users");
+            return error(exchange, HttpStatus.FORBIDDEN, "FORBIDDEN", "Only privileged users can create staff/courier users");
+        }
+
+        String targetRole = request.getRole() != null ? request.getRole().toUpperCase() : "";
+        if ("ADMIN".equals(targetRole)) {
+            if (!"SUPER_ADMIN".equals(actor.role())) {
+                return error(exchange, HttpStatus.FORBIDDEN, "FORBIDDEN", "Only SUPER_ADMIN can create ADMIN users");
+            }
+        } else if ("COURIER".equals(targetRole)) {
+            if (!"SUPER_ADMIN".equals(actor.role()) && !"ADMIN".equals(actor.role())) {
+                return error(exchange, HttpStatus.FORBIDDEN, "FORBIDDEN", "Only SUPER_ADMIN or ADMIN can create COURIER users");
+            }
+        } else {
+            return error(exchange, HttpStatus.BAD_REQUEST, "INVALID_ROLE", "Staff role must be ADMIN or COURIER");
         }
 
         ApiResponse<RegisterResponse> response =
@@ -163,12 +176,15 @@ public class AuthController {
         }
 
         String filterRole = role == null || role.isBlank() ? "ADMIN" : role.trim().toUpperCase();
-        if (!List.of("ADMIN", "COURIER").contains(filterRole)) {
+        if (!List.of("ADMIN", "COURIER", "CLIENT").contains(filterRole)) {
             return error(exchange, HttpStatus.BAD_REQUEST, "INVALID_ROLE",
-                    "Only ADMIN or COURIER users can be listed here");
+                    "Only ADMIN, COURIER, or CLIENT users can be listed here");
         }
         if ("ADMIN".equals(filterRole) && !"SUPER_ADMIN".equals(actor.role())) {
             return error(exchange, HttpStatus.FORBIDDEN, "FORBIDDEN", "Only SUPER_ADMIN can view admin users");
+        }
+        if ("CLIENT".equals(filterRole) && !List.of("ADMIN", "SUPER_ADMIN").contains(actor.role())) {
+            return error(exchange, HttpStatus.FORBIDDEN, "FORBIDDEN", "Only ADMIN or SUPER_ADMIN can view client users");
         }
 
         log.info("REST: List auth users request - page: {}, size: {}, role: {}", page, size, filterRole);

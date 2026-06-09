@@ -780,19 +780,21 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
         double fee = baseFee + (estimatedRoadDistanceKm * pricePerKm);
 
         // Apply service type multiplier
-        double serviceTypeMultiplier = switch (serviceType) {
-            case EXPRESS -> 1.4;
-            case SCHEDULED -> 1.1;
-            default -> 1.0;
-        };
+        double serviceTypeMultiplier = 1.0;
+        if (serviceType == kz.courier.order.v1.ServiceType.EXPRESS) {
+            serviceTypeMultiplier = 1.4;
+        } else if (serviceType == kz.courier.order.v1.ServiceType.SCHEDULED) {
+            serviceTypeMultiplier = 1.1;
+        }
         fee *= serviceTypeMultiplier;
 
         // Apply parcel size multiplier
-        double parcelSizeMultiplier = switch (parcelSize) {
-            case MEDIUM -> 1.2;
-            case LARGE -> 1.5;
-            default -> 1.0;
-        };
+        double parcelSizeMultiplier = 1.0;
+        if (parcelSize == kz.courier.orderservice.model.ParcelSize.MEDIUM) {
+            parcelSizeMultiplier = 1.2;
+        } else if (parcelSize == kz.courier.orderservice.model.ParcelSize.LARGE) {
+            parcelSizeMultiplier = 1.5;
+        }
         fee *= parcelSizeMultiplier;
 
         return BigDecimal.valueOf(fee).setScale(2, java.math.RoundingMode.HALF_UP);
@@ -912,17 +914,19 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
 
     private boolean isCompanyPreparationTransition(kz.courier.orderservice.model.OrderStatus current,
                                                    kz.courier.orderservice.model.OrderStatus next) {
-        return switch (current) {
-            case NEW -> next == kz.courier.orderservice.model.OrderStatus.ACCEPTED
+        if (current == kz.courier.orderservice.model.OrderStatus.NEW) {
+            return next == kz.courier.orderservice.model.OrderStatus.ACCEPTED
                     || next == kz.courier.orderservice.model.OrderStatus.REJECTED
                     || next == kz.courier.orderservice.model.OrderStatus.CANCELLED;
-            case ACCEPTED -> next == kz.courier.orderservice.model.OrderStatus.PREPARING
+        } else if (current == kz.courier.orderservice.model.OrderStatus.ACCEPTED) {
+            return next == kz.courier.orderservice.model.OrderStatus.PREPARING
                     || next == kz.courier.orderservice.model.OrderStatus.CANCELLED
                     || next == kz.courier.orderservice.model.OrderStatus.READY;
-            case PREPARING -> next == kz.courier.orderservice.model.OrderStatus.READY
+        } else if (current == kz.courier.orderservice.model.OrderStatus.PREPARING) {
+            return next == kz.courier.orderservice.model.OrderStatus.READY
                     || next == kz.courier.orderservice.model.OrderStatus.CANCELLED;
-            default -> false;
-        };
+        }
+        return false;
     }
 
     private boolean isPrivileged(AuthenticatedUser caller) {

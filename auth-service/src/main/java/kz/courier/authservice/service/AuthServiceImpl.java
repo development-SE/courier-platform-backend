@@ -193,6 +193,7 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
                     .pushConsent(req.getPushConsent())
                     .role(targetRole)
                     .companyId(companyId)
+                    .emailVerified(true)
                     .createdAt(LocalDateTime.now())
                     .updatedAt(LocalDateTime.now())
                     .build();
@@ -786,17 +787,21 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
     }
 
     private void validateStaffCreation(Role actorRole, Role targetRole) {
-        if (actorRole != Role.SUPER_ADMIN) {
-            throw new IllegalArgumentException("Only SUPER_ADMIN can create staff users");
-        }
-
-        if (targetRole != Role.ADMIN) {
-            throw new IllegalArgumentException("Staff role must be ADMIN");
+        if (targetRole == Role.ADMIN) {
+            if (actorRole != Role.SUPER_ADMIN) {
+                throw new IllegalArgumentException("Only SUPER_ADMIN can create ADMIN users");
+            }
+        } else if (targetRole == Role.COURIER) {
+            if (actorRole != Role.SUPER_ADMIN && actorRole != Role.ADMIN) {
+                throw new IllegalArgumentException("Only SUPER_ADMIN or ADMIN can create COURIER users");
+            }
+        } else {
+            throw new IllegalArgumentException("Staff role must be ADMIN or COURIER");
         }
     }
 
     private void validateStaffCompanyScope(Role targetRole, UUID companyId) {
-        if (companyId != null) {
+        if (targetRole == Role.ADMIN && companyId != null) {
             throw new IllegalArgumentException("companyId must be empty for ADMIN");
         }
     }

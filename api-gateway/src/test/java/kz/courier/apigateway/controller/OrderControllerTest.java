@@ -65,6 +65,9 @@ class OrderControllerTest {
                 toDate,
                 10.0,
                 100.0,
+                null, // lat
+                null, // lng
+                null, // radiusKm
                 2,
                 25,
                 "totalAmount,desc",
