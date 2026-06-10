@@ -124,8 +124,8 @@ public class AssignmentEventConsumer {
 
     private OrderStatus mapAssignmentStatus(AssignmentStatus status) {
         return switch (status) {
-            case PENDING, TIMED_OUT, MANUAL_REQUIRED -> OrderStatus.ASSIGNMENT_PENDING;
-            case ASSIGNED, ACCEPTED -> OrderStatus.ASSIGNED;
+            case PENDING, TIMED_OUT, MANUAL_REQUIRED, ASSIGNED -> OrderStatus.ASSIGNMENT_PENDING;
+            case ACCEPTED -> OrderStatus.ASSIGNED;
             case PICKED_UP -> OrderStatus.PICKED_UP;
             case IN_TRANSIT -> OrderStatus.IN_TRANSIT;
             case ARRIVED -> OrderStatus.DELIVERY_CONFIRMATION_PENDING;
