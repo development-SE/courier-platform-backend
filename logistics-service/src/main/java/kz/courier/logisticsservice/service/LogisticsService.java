@@ -8,6 +8,7 @@ import kz.courier.logisticsservice.entity.CourierAssignment;
 import kz.courier.logisticsservice.exception.AssignmentNotFoundException;
 import kz.courier.logisticsservice.exception.BusinessException;
 import kz.courier.logisticsservice.exception.LocationNotFoundException;
+import kz.courier.logisticsservice.grpc.AuthGrpcClient;
 import kz.courier.logisticsservice.grpc.OrderGrpcClient;
 import kz.courier.logisticsservice.kafka.AssignmentEventPublisher;
 import kz.courier.logisticsservice.mapper.AssignmentMapper;
@@ -32,6 +33,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -63,6 +65,8 @@ public class LogisticsService {
     private final AssignmentMapper mapper;
     private final AssignmentEventPublisher eventPublisher;
     private final OrderGrpcClient orderGrpcClient;
+    private final AuthGrpcClient authGrpcClient;
+    private final CourierProfileClient courierProfileClient;
     private final GatewayPrincipalProvider gatewayPrincipalProvider;
     private final SystemPrincipalRunner systemPrincipalRunner;
     private final CapacityAwareAssignmentService capacityAwareAssignmentService;
@@ -167,7 +171,7 @@ public class LogisticsService {
             UUID courierId, UUID orderId, AssignmentStatus status,
             int page, int pageSize, String sortBy, boolean descending) {
 
-        UUID effectiveCourierId = restrictAssignmentListCourierId(courierId);
+        UUID effectiveCourierId = restrictAssignmentListCourierId(courierId, orderId);
         Sort sort = descending
                 ? Sort.by(sortBy).descending()
                 : Sort.by(sortBy).ascending();
@@ -378,11 +382,33 @@ public class LogisticsService {
      */
     @Transactional(readOnly = true)
     public LogisticsDto.CourierLocationResponse getLocation(UUID courierId) {
-        requireSelfOrAdmin(courierId, "read courier location");
+        requireCanReadCourierLocation(courierId);
 
         return mapper.toLocationResponse(
                 locationRepository.findById(courierId)
                         .orElseThrow(() -> new LocationNotFoundException(courierId)));
+    }
+
+    @Transactional(readOnly = true)
+    public LogisticsDto.CourierDetailsResponse getCourierDetails(UUID courierId) {
+        requireCanReadCourierLocation(courierId);
+
+        AuthGrpcClient.AuthUser user = authGrpcClient.getUser(courierId);
+
+        String transportType = systemPrincipalRunner.run(() ->
+                courierProfileClient.getCourier(courierId)
+                        .map(CourierProfileClient.CourierProfileSnapshot::transportType)
+                        .orElse(null)
+        );
+
+        return LogisticsDto.CourierDetailsResponse.builder()
+                .courierId(courierId)
+                .name(user.firstName())
+                .surname(user.lastName())
+                .phone(user.phone())
+                .transportType(transportType)
+                .rating(5.0)
+                .build();
     }
 
     // =========================================================================
@@ -472,6 +498,33 @@ public class LogisticsService {
                 "You may only " + action + " for your own courier profile");
     }
 
+    private void requireCanReadCourierLocation(UUID targetCourierId) {
+        UUID currentUserId = gatewayPrincipalProvider.requireCurrentUserId();
+
+        if (currentUserId.equals(targetCourierId)) {
+            return;
+        }
+
+        if (gatewayPrincipalProvider.hasAnyRole(PRIVILEGED_LOCATION_ROLES.toArray(String[]::new))) {
+            log.warn("Admin override action=read courier location actorId={} targetCourierId={}",
+                    currentUserId, targetCourierId);
+            return;
+        }
+
+        List<CourierAssignment> activeAssignments = assignmentRepository.findActiveAssignmentByCourierId(targetCourierId);
+        for (CourierAssignment activeAssignment : activeAssignments) {
+            try {
+                orderGrpcClient.getOrder(activeAssignment.getOrderId());
+                return;
+            } catch (Exception e) {
+                // Try next active assignment
+            }
+        }
+
+        throw new BusinessException("FORBIDDEN",
+                "You may only read courier location for your own courier profile or an active assignment");
+    }
+
     private void retryManualRequiredAssignmentsWhenOnline(boolean online, String trigger) {
         if (!online) {
             return;
@@ -517,13 +570,25 @@ public class LogisticsService {
             return;
         }
 
+        try {
+            orderGrpcClient.getOrder(assignment.getOrderId());
+            return;
+        } catch (Exception e) {
+            // Ignore and fall through to throw FORBIDDEN
+        }
+
         throw new BusinessException("FORBIDDEN",
                 "Only admins or the assigned courier may read this assignment");
     }
 
-    private UUID restrictAssignmentListCourierId(UUID requestedCourierId) {
+    private UUID restrictAssignmentListCourierId(UUID requestedCourierId, UUID orderId) {
         if (gatewayPrincipalProvider.hasAnyRole(PRIVILEGED_ASSIGNMENT_ROLES.toArray(String[]::new))) {
             return requestedCourierId;
+        }
+
+        if (orderId != null) {
+            orderGrpcClient.getOrder(orderId);
+            return null;
         }
 
         if (!gatewayPrincipalProvider.hasRole("COURIER")) {

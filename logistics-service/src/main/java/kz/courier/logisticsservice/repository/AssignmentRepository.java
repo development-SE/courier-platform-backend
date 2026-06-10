@@ -61,7 +61,7 @@ public interface AssignmentRepository extends JpaRepository<CourierAssignment, U
                kz.courier.logisticsservice.entity.AssignmentStatus.MANUAL_REQUIRED)
         ORDER BY a.assignedAt DESC
         """)
-    Optional<CourierAssignment> findActiveAssignmentByCourierId(@Param("courierId") UUID courierId);
+    List<CourierAssignment> findActiveAssignmentByCourierId(@Param("courierId") UUID courierId);
 
     @Query("""
         SELECT a.courierId
