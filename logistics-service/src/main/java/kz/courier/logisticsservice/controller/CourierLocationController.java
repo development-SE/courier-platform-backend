@@ -55,6 +55,14 @@ public class CourierLocationController {
                 LogisticsDto.ApiResponse.ok(service.getLocation(courierId)));
     }
 
+    @GetMapping("/{courierId}")
+    public ResponseEntity<LogisticsDto.ApiResponse<LogisticsDto.CourierDetailsResponse>> getCourierDetails(
+            @PathVariable UUID courierId) {
+
+        return ResponseEntity.ok(
+                LogisticsDto.ApiResponse.ok(service.getCourierDetails(courierId)));
+    }
+
     /**
      * Toggles the authenticated courier's online/offline status without overwriting coordinates.
      */

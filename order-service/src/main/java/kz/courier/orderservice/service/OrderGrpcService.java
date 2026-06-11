@@ -132,6 +132,11 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
             // ── Serialize items to JSON ─────────────────────────────────────
             String itemsJson = OrderMapper.serializeItems(request.getItemsList(), objectMapper);
             BigDecimal totalAmount = calculateTotalAmount(request.getItemsList());
+            BigDecimal deliveryFee = calculateDeliveryFee(
+                    request.getPickupAddress(),
+                    request.getDeliveryAddress(),
+                    request.getServiceType(),
+                    resolveParcelSize(request));
 
             // ── Persist order ───────────────────────────────────────────────
             Order order = Order.builder()
@@ -145,6 +150,7 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
                     .pickupContact(pickupContact)
                     .itemsJson(itemsJson)
                     .totalAmount(totalAmount)
+                    .deliveryFee(deliveryFee)
                     .parcelSize(resolveParcelSize(request))
                     .status(companyId == null
                             ? kz.courier.orderservice.model.OrderStatus.READY
@@ -152,8 +158,8 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
                     .build();
 
             order = orderRepository.save(order);
-            log.info("[OrderLifecycle] order created orderId={} authorId={} companyId={} status={} serviceType={}",
-                    order.getId(), order.getAuthorId(), order.getCompanyId(), order.getStatus(), order.getServiceType());
+            log.info("[OrderLifecycle] order created orderId={} authorId={} companyId={} status={} serviceType={} deliveryFee={}",
+                    order.getId(), order.getAuthorId(), order.getCompanyId(), order.getStatus(), order.getServiceType(), order.getDeliveryFee());
             orderEventPublisher.publishCreatedAfterCommit(order);
             if (order.getStatus() == kz.courier.orderservice.model.OrderStatus.READY) {
                 log.info("[OrderLifecycle] order moved to READY orderId={} reason=custom-order", order.getId());
@@ -170,6 +176,7 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
                             .setPickupContactId(pickupContact.getId().toString())
                             .setCurrentStatus(kz.courier.order.v1.OrderStatus.valueOf(order.getStatus().name()))
                             .setServiceType(kz.courier.order.v1.ServiceType.valueOf(order.getServiceType().name()))
+                            .setDeliveryFee(order.getDeliveryFee().doubleValue())
                             .build());
 
         } catch (IllegalArgumentException e) {
@@ -455,9 +462,29 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
             log.info("[gRPC] listOrders caller={} roles={} filter={} page={} size={} sort={} desc={}",
                     caller.userId(), caller.roles(), scopedFilter, page + 1, pageSize, sortBy, sortDesc);
 
-            Page<Order> result = orderRepository.findAll(
-                    OrderSpecifications.byFilter(scopedFilter),
-                    PageRequest.of(page, pageSize, sort));
+            Page<Order> result;
+            if (request.hasLat() && request.hasLng()) {
+                double radiusKm = request.hasRadiusKm() ? request.getRadiusKm() : 10.0;
+                double radiusMeters = radiusKm * 1000.0;
+                String statusStr = scopedFilter.status() != null ? scopedFilter.status().name() : null;
+                result = orderRepository.findAllNearby(
+                        statusStr,
+                        scopedFilter.companyId(),
+                        scopedFilter.userId(),
+                        scopedFilter.minAmount(),
+                        scopedFilter.maxAmount(),
+                        scopedFilter.createdAfter(),
+                        scopedFilter.createdBefore(),
+                        request.getLat(),
+                        request.getLng(),
+                        radiusMeters,
+                        PageRequest.of(page, pageSize)
+                );
+            } else {
+                result = orderRepository.findAll(
+                        OrderSpecifications.byFilter(scopedFilter),
+                        PageRequest.of(page, pageSize, sort));
+            }
 
             var listBuilder = ListOrdersResponse.newBuilder()
                     .setResponse(successResponse())
@@ -784,7 +811,7 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
     }
 
     private OrderFilter applyVisibilityScope(OrderFilter filter, AuthenticatedUser caller) {
-        if (isPrivileged(caller)) {
+        if (isPrivileged(caller) || isCourier(caller)) {
             return filter;
         }
 
@@ -838,6 +865,61 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
         return total;
     }
 
+    private BigDecimal calculateDeliveryFee(
+            kz.courier.order.v1.Address pickup,
+            kz.courier.order.v1.Address delivery,
+            kz.courier.order.v1.ServiceType serviceType,
+            kz.courier.orderservice.model.ParcelSize parcelSize) {
+
+        double pickupLat = pickup.getLatitude();
+        double pickupLng = pickup.getLongitude();
+        double deliveryLat = delivery.getLatitude();
+        double deliveryLng = delivery.getLongitude();
+
+        // Calculate Haversine distance in km
+        double distanceKm = calculateHaversineDistanceKm(pickupLat, pickupLng, deliveryLat, deliveryLng);
+
+        // Apply circuitry factor (e.g. 1.3) to approximate road distance
+        double estimatedRoadDistanceKm = distanceKm * 1.3;
+
+        // Base fee: 500 KZT, Price per km: 100 KZT
+        double baseFee = 500.0;
+        double pricePerKm = 100.0;
+
+        double fee = baseFee + (estimatedRoadDistanceKm * pricePerKm);
+
+        // Apply service type multiplier
+        double serviceTypeMultiplier = 1.0;
+        if (serviceType == kz.courier.order.v1.ServiceType.EXPRESS) {
+            serviceTypeMultiplier = 1.4;
+        } else if (serviceType == kz.courier.order.v1.ServiceType.SCHEDULED) {
+            serviceTypeMultiplier = 1.1;
+        }
+        fee *= serviceTypeMultiplier;
+
+        // Apply parcel size multiplier
+        double parcelSizeMultiplier = 1.0;
+        if (parcelSize == kz.courier.orderservice.model.ParcelSize.MEDIUM) {
+            parcelSizeMultiplier = 1.2;
+        } else if (parcelSize == kz.courier.orderservice.model.ParcelSize.LARGE) {
+            parcelSizeMultiplier = 1.5;
+        }
+        fee *= parcelSizeMultiplier;
+
+        return BigDecimal.valueOf(fee).setScale(2, java.math.RoundingMode.HALF_UP);
+    }
+
+    private double calculateHaversineDistanceKm(double lat1, double lon1, double lat2, double lon2) {
+        double earthRadius = 6371.0; // km
+        double dLat = Math.toRadians(lat2 - lat1);
+        double dLon = Math.toRadians(lon2 - lon1);
+        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+                + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
+                * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return earthRadius * c;
+    }
+
     private kz.courier.orderservice.model.ParcelSize resolveParcelSize(CreateOrderRequest request) {
         if (request.hasParcelSize()
                 && request.getParcelSize() != kz.courier.order.v1.ParcelSize.PARCEL_SIZE_UNSPECIFIED) {
@@ -864,7 +946,7 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
     }
 
     private void authorizeOrderRead(AuthenticatedUser caller, Order order) {
-        if (isPrivileged(caller)) {
+        if (isPrivileged(caller) || isCourier(caller)) {
             return;
         }
         if (isCourier(caller)) {
@@ -951,17 +1033,19 @@ public class OrderGrpcService extends OrderServiceGrpc.OrderServiceImplBase {
 
     private boolean isCompanyPreparationTransition(kz.courier.orderservice.model.OrderStatus current,
                                                    kz.courier.orderservice.model.OrderStatus next) {
-        return switch (current) {
-            case NEW -> next == kz.courier.orderservice.model.OrderStatus.ACCEPTED
+        if (current == kz.courier.orderservice.model.OrderStatus.NEW) {
+            return next == kz.courier.orderservice.model.OrderStatus.ACCEPTED
                     || next == kz.courier.orderservice.model.OrderStatus.REJECTED
                     || next == kz.courier.orderservice.model.OrderStatus.CANCELLED;
-            case ACCEPTED -> next == kz.courier.orderservice.model.OrderStatus.PREPARING
+        } else if (current == kz.courier.orderservice.model.OrderStatus.ACCEPTED) {
+            return next == kz.courier.orderservice.model.OrderStatus.PREPARING
                     || next == kz.courier.orderservice.model.OrderStatus.CANCELLED
                     || next == kz.courier.orderservice.model.OrderStatus.READY;
-            case PREPARING -> next == kz.courier.orderservice.model.OrderStatus.READY
+        } else if (current == kz.courier.orderservice.model.OrderStatus.PREPARING) {
+            return next == kz.courier.orderservice.model.OrderStatus.READY
                     || next == kz.courier.orderservice.model.OrderStatus.CANCELLED;
-            default -> false;
-        };
+        }
+        return false;
     }
 
     private boolean isPrivileged(AuthenticatedUser caller) {

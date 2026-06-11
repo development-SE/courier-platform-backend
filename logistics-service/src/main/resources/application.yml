@@ -63,6 +63,9 @@ grpc:
     order-service:
       address: ${ORDER_GRPC_ADDRESS:discovery:///order-service}
       negotiationType: PLAINTEXT
+    auth-service:
+      address: ${AUTH_GRPC_ADDRESS:discovery:///auth-service}
+      negotiationType: PLAINTEXT
 
 courier-service:
   base-url: ${COURIER_SERVICE_URL:http://localhost:8087}

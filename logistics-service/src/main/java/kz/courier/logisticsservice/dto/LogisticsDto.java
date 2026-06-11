@@ -225,6 +225,16 @@ public final class LogisticsDto {
             OffsetDateTime updatedAt
     ) {}
 
+    @Builder
+    public record CourierDetailsResponse(
+            UUID courierId,
+            String name,
+            String surname,
+            String phone,
+            String transportType,
+            Double rating
+    ) {}
+
     /** Query params for GET /couriers/nearby */
     public record NearbyQuery(
             @NotNull

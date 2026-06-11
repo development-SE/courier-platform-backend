@@ -196,8 +196,7 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
                     .pushConsent(req.getPushConsent())
                     .role(targetRole)
                     .companyId(companyId)
-                    .emailVerified(isCourierEmployee)
-                    .active(isCourierEmployee)
+                    .emailVerified(true)
                     .createdAt(LocalDateTime.now())
                     .updatedAt(LocalDateTime.now())
                     .build();
@@ -796,14 +795,14 @@ public class AuthServiceImpl extends AuthServiceGrpc.AuthServiceImplBase {
     private void validateStaffCreation(Role actorRole, Role targetRole) {
         if (targetRole == Role.ADMIN) {
             if (actorRole != Role.SUPER_ADMIN) {
-                throw new IllegalArgumentException("Only SUPER_ADMIN can create admin users");
+                throw new IllegalArgumentException("Only SUPER_ADMIN can create ADMIN users");
             }
         } else if (targetRole == Role.COURIER) {
             if (actorRole != Role.SUPER_ADMIN && actorRole != Role.ADMIN) {
-                throw new IllegalArgumentException("Only ADMIN or SUPER_ADMIN can create courier employee accounts");
+                throw new IllegalArgumentException("Only SUPER_ADMIN or ADMIN can create COURIER users");
             }
         } else {
-            throw new IllegalArgumentException("Staff creation only supports ADMIN or COURIER roles");
+            throw new IllegalArgumentException("Staff role must be ADMIN or COURIER");
         }
     }
 

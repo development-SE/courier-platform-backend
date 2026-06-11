@@ -108,6 +108,7 @@ message CreateOrderResponse {
   string pickup_contact_id               = 6;
   OrderStatus current_status             = 7;
   ServiceType service_type               = 8;
+  double delivery_fee                    = 9;
 }
 
 message GetOrderRequest {
@@ -131,6 +132,7 @@ message GetOrderResponse {
   double total_amount                    = 14;
   optional string delivery_confirmation_code = 15; // Visible only to order owner while confirmation is pending
   optional ParcelSize parcel_size         = 16;
+  double delivery_fee                    = 17;
 }
 
 message UpdateOrderStatusRequest {
@@ -204,6 +206,9 @@ message ListOrdersRequest {
   optional string company_id         = 11;
   optional double min_amount         = 12;
   optional double max_amount         = 13;
+  optional double lat                = 14;
+  optional double lng                = 15;
+  optional double radius_km          = 16;
 
   // Sorting
   optional string sort_by            = 8;  // "created_at", "status", "total_amount" (add later)

@@ -153,16 +153,26 @@ public class OrderController {
             OffsetDateTime toDate,
             @RequestParam(required = false)              Double minAmount,
             @RequestParam(required = false)              Double maxAmount,
+            @RequestParam(required = false)              Double lat,
+            @RequestParam(required = false)              Double lng,
+            @RequestParam(required = false)              Double radiusKm,
             @RequestParam(defaultValue = "1")            int    page,
             @RequestParam(defaultValue = "10")           int    size,
             @RequestParam(required = false)              String sort,
             @RequestParam(defaultValue = "createdAt")    String sortBy,
             @RequestParam(defaultValue = "true")         boolean sortDesc,
             ServerWebExchange exchange) {
-
+ 
         log.info("REST: List Orders request");
         AuthContext auth = extractAuth(authHeader);
         String[] parsedSort = parseSort(sort, sortBy, sortDesc);
+
+        // Apply radius default if coordinates are provided
+        Double finalRadius = radiusKm;
+        if (lat != null && lng != null && radiusKm == null) {
+            finalRadius = 10.0;
+        }
+
         OrderListFilterDto filter = OrderListFilterDto.builder()
                 .companyId(companyId)
                 .userId(userId != null ? userId : clientId)
@@ -171,6 +181,9 @@ public class OrderController {
                 .toDate(toDate)
                 .minAmount(minAmount)
                 .maxAmount(maxAmount)
+                .lat(lat)
+                .lng(lng)
+                .radiusKm(finalRadius)
                 .page(page)
                 .size(size)
                 .sortBy(parsedSort[0])

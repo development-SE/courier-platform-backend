@@ -182,13 +182,15 @@ public class CourierService {
                     "Courier is currently not allowed to take orders", false);
         }
         
-        List<DocumentType> required = getRequiredDocumentTypes(profile.getTransportType());
-        List<CourierDocument> docs = profile.getDocuments();
-        boolean allApproved = required.stream().allMatch(reqType -> docs != null && docs.stream()
-                .anyMatch(d -> d.getDocumentType() == reqType && d.getStatus() == DocumentStatus.APPROVED));
-        if (!allApproved) {
-            return ineligible(profile, evaluatedAt, "DOCUMENTS_NOT_APPROVED",
-                    "Not all required onboarding documents are approved", false);
+        if (profile.getCourierType() != CourierType.EMPLOYEE) {
+            List<DocumentType> required = getRequiredDocumentTypes(profile.getTransportType());
+            List<CourierDocument> docs = profile.getDocuments();
+            boolean allApproved = required.stream().allMatch(reqType -> docs != null && docs.stream()
+                    .anyMatch(d -> d.getDocumentType() == reqType && d.getStatus() == DocumentStatus.APPROVED));
+            if (!allApproved) {
+                return ineligible(profile, evaluatedAt, "DOCUMENTS_NOT_APPROVED",
+                        "Not all required onboarding documents are approved", false);
+            }
         }
 
         if (profile.getCourierType() == CourierType.EMPLOYEE) {
@@ -620,6 +622,12 @@ public class CourierService {
     }
 
     private void reEvaluateVerification(CourierProfile profile) {
+        if (profile.getCourierType() == CourierType.EMPLOYEE) {
+            profile.setVerified(true);
+            profile.setEmploymentStatus(EmploymentStatus.ACTIVE);
+            profile.setCanTakeOrders(true);
+            return;
+        }
         List<DocumentType> requiredTypes = getRequiredDocumentTypes(profile.getTransportType());
         List<CourierDocument> docs = courierDocumentRepository.findByCourierId(profile.getId());
         boolean allApproved = requiredTypes.stream().allMatch(reqType -> docs != null && docs.stream()
@@ -646,6 +654,9 @@ public class CourierService {
     }
 
     private List<DocumentType> getMissingDocumentTypes(CourierProfile profile) {
+        if (profile.getCourierType() == CourierType.EMPLOYEE) {
+            return List.of();
+        }
         List<DocumentType> required = getRequiredDocumentTypes(profile.getTransportType());
         List<DocumentType> uploadedApprovedOrPending = profile.getDocuments() == null ? List.of() :
                 profile.getDocuments().stream()

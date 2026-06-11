@@ -150,7 +150,8 @@ public class OrderClient {
             return ApiResponse.success(Map.of(
                     "orderId", grpcResponse.getOrderId(),
                     "status", grpcResponse.getCurrentStatus().name(),
-                    "serviceType", grpcResponse.getServiceType().name()
+                    "serviceType", grpcResponse.getServiceType().name(),
+                    "deliveryFee", grpcResponse.getDeliveryFee()
             ));
 
         } catch (IllegalArgumentException e) {
@@ -178,7 +179,7 @@ public class OrderClient {
                 );
             }
 
-            return ApiResponse.success(mapOrder(grpcResponse));
+            return ApiResponse.success(mapGrpcOrderToMap(grpcResponse));
 
         } catch (StatusRuntimeException e) {
             return handleGrpcError(e);
@@ -280,6 +281,9 @@ public class OrderClient {
             if (filter.getToDate() != null) req.setCreatedBefore(toTimestamp(filter.getToDate()));
             if (filter.getMinAmount() != null) req.setMinAmount(filter.getMinAmount());
             if (filter.getMaxAmount() != null) req.setMaxAmount(filter.getMaxAmount());
+            if (filter.getLat() != null) req.setLat(filter.getLat());
+            if (filter.getLng() != null) req.setLng(filter.getLng());
+            if (filter.getRadiusKm() != null) req.setRadiusKm(filter.getRadiusKm());
             req.setSortBy(filter.getSortBy());
             req.setSortDesc(filter.isSortDesc());
 
@@ -293,7 +297,7 @@ public class OrderClient {
             }
 
             List<Map<String, Object>> orders = grpcResponse.getOrdersList().stream()
-                    .map(this::mapOrder)
+                    .map(this::mapGrpcOrderToMap)
                     .toList();
 
             return ApiResponse.success(Map.of(
@@ -499,6 +503,85 @@ public class OrderClient {
                     field + " has invalid value '" + rawValue + "'. Allowed: " +
                             java.util.Arrays.toString(enumClass.getEnumConstants()));
         }
+    }
+
+    private Map<String, Object> mapGrpcOrderToMap(GetOrderResponse o) {
+        Map<String, Object> data = new java.util.HashMap<>();
+        data.put("orderId", o.getOrderId());
+        data.put("status", o.getStatus().name());
+        data.put("serviceType", o.getServiceType().name());
+        if (o.hasParcelSize()) {
+            data.put("parcelSize", o.getParcelSize().name());
+        }
+        data.put("comment", o.getComment());
+        if (o.hasDeliveryConfirmationCode()) {
+            data.put("deliveryConfirmationCode", o.getDeliveryConfirmationCode());
+        }
+        data.put("totalAmount", o.getTotalAmount());
+        data.put("deliveryFee", o.getDeliveryFee());
+        data.put("companyId", o.getCompanyId());
+
+        if (o.hasCreatedAt()) {
+            OffsetDateTime odt = OffsetDateTime.ofInstant(
+                java.time.Instant.ofEpochSecond(o.getCreatedAt().getSeconds(), o.getCreatedAt().getNanos()),
+                java.time.ZoneOffset.UTC
+            );
+            data.put("createdAt", odt.toString());
+        }
+
+        if (o.hasDeliveryAddress()) {
+            Address addr = o.getDeliveryAddress();
+            data.put("deliveryAddress", Map.of(
+                    "city", addr.getCity(),
+                    "street", addr.getStreet(),
+                    "house", addr.getHouse(),
+                    "apartment", addr.getApartment(),
+                    "entrance", addr.getEntrance(),
+                    "floor", addr.getFloor(),
+                    "latitude", addr.getLatitude(),
+                    "longitude", addr.getLongitude()
+            ));
+        }
+
+        if (o.hasPickupAddress()) {
+            Address addr = o.getPickupAddress();
+            data.put("pickupAddress", Map.of(
+                    "city", addr.getCity(),
+                    "street", addr.getStreet(),
+                    "house", addr.getHouse(),
+                    "latitude", addr.getLatitude(),
+                    "longitude", addr.getLongitude()
+            ));
+        }
+
+        if (o.hasRecipientInfo()) {
+            ContactInfo c = o.getRecipientInfo();
+            Map<String, Object> contactMap = new java.util.HashMap<>();
+            contactMap.put("name", c.getName());
+            contactMap.put("phone", c.getPhone());
+            if (c.hasSurname()) contactMap.put("surname", c.getSurname());
+            data.put("recipientInfo", contactMap);
+        }
+
+        if (o.hasPickupInfo()) {
+            ContactInfo c = o.getPickupInfo();
+            Map<String, Object> contactMap = new java.util.HashMap<>();
+            contactMap.put("name", c.getName());
+            contactMap.put("phone", c.getPhone());
+            if (c.hasSurname()) contactMap.put("surname", c.getSurname());
+            data.put("pickupInfo", contactMap);
+        }
+
+        data.put("items", o.getItemsList().stream().map(item -> {
+            Map<String, Object> itemMap = new java.util.HashMap<>();
+            itemMap.put("itemId", item.getItemId());
+            itemMap.put("name", item.getName());
+            itemMap.put("quantity", item.getQuantity());
+            if (item.hasPrice()) itemMap.put("price", item.getPrice());
+            return itemMap;
+        }).collect(Collectors.toList()));
+
+        return data;
     }
 
     // ── Error handling ────────────────────────────────────────────────────────
